@@ -1,0 +1,11 @@
+## success
+$ true
+[exit:0]
+
+## failure
+$ false
+[exit:1]
+
+## custom
+$ sh -c "exit 42"
+[exit:42]

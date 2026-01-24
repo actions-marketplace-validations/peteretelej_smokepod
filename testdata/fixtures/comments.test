@@ -1,0 +1,6 @@
+# This is a file-level comment
+## main
+# Comment before command
+$ echo test
+test
+# Comment after output

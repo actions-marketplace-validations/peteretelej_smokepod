@@ -1,0 +1,9 @@
+## version
+$ cat /etc/os-release | head -1
+NAME=.* (re)
+
+## numbers
+$ seq 1 3
+\d+ (re)
+\d+ (re)
+\d+ (re)
