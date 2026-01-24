@@ -259,26 +259,3 @@ func TestParsePlaywrightOutput_Skipped(t *testing.T) {
 	}
 }
 
-func TestPlaywrightResult_ToTestResult(t *testing.T) {
-	pr := &PlaywrightResult{
-		Passed:   true,
-		Duration: 5 * time.Second,
-		Total:    10,
-		PassedN:  10,
-	}
-
-	tr := pr.ToTestResult("e2e-suite")
-
-	if tr.Name != "e2e-suite" {
-		t.Errorf("Name: got %q, want %q", tr.Name, "e2e-suite")
-	}
-	if tr.Type != "playwright" {
-		t.Errorf("Type: got %q, want %q", tr.Type, "playwright")
-	}
-	if !tr.Passed {
-		t.Error("expected Passed to be true")
-	}
-	if tr.Duration != 5*time.Second {
-		t.Errorf("Duration: got %v, want 5s", tr.Duration)
-	}
-}

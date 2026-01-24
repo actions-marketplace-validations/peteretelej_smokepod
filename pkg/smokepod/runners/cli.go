@@ -8,22 +8,21 @@ import (
 	"strings"
 
 	"github.com/peteretelej/smokepod/internal/testfile"
-	"github.com/peteretelej/smokepod/pkg/smokepod"
 )
 
 // CLIRunner executes CLI tests in a container.
 type CLIRunner struct {
-	container *smokepod.Container
+	container ContainerExecutor
 }
 
 // NewCLIRunner creates a new CLI test runner.
-func NewCLIRunner(container *smokepod.Container) *CLIRunner {
+func NewCLIRunner(container ContainerExecutor) *CLIRunner {
 	return &CLIRunner{container: container}
 }
 
 // Run executes all commands in a section and returns results.
-func (r *CLIRunner) Run(ctx context.Context, section *testfile.Section) (*smokepod.SectionResult, error) {
-	result := &smokepod.SectionResult{
+func (r *CLIRunner) Run(ctx context.Context, section *testfile.Section) (*SectionResult, error) {
+	result := &SectionResult{
 		Name:   section.Name,
 		Passed: true,
 	}
@@ -39,8 +38,8 @@ func (r *CLIRunner) Run(ctx context.Context, section *testfile.Section) (*smokep
 	return result, nil
 }
 
-func (r *CLIRunner) runCommand(ctx context.Context, cmd testfile.Command) smokepod.CommandResult {
-	result := smokepod.CommandResult{
+func (r *CLIRunner) runCommand(ctx context.Context, cmd testfile.Command) CommandResult {
+	result := CommandResult{
 		Command: cmd.Cmd,
 		Line:    cmd.Line,
 		Passed:  true,

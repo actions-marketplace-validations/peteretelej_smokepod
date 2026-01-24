@@ -5,17 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-
-	"github.com/peteretelej/smokepod/pkg/smokepod"
 )
 
 // PlaywrightRunner executes Playwright tests in a container.
 type PlaywrightRunner struct {
-	container *smokepod.Container
+	container ContainerExecutor
 }
 
 // NewPlaywrightRunner creates a new Playwright test runner.
-func NewPlaywrightRunner(container *smokepod.Container) *PlaywrightRunner {
+func NewPlaywrightRunner(container ContainerExecutor) *PlaywrightRunner {
 	return &PlaywrightRunner{container: container}
 }
 
@@ -142,12 +140,3 @@ func extractSuites(suites []PlaywrightSuite) []SuiteResult {
 	return results
 }
 
-// ToTestResult converts PlaywrightResult to the standard TestResult format.
-func (r *PlaywrightResult) ToTestResult(name string) smokepod.TestResult {
-	return smokepod.TestResult{
-		Name:     name,
-		Type:     "playwright",
-		Passed:   r.Passed,
-		Duration: r.Duration,
-	}
-}
