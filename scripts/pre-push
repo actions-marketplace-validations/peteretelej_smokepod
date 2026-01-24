@@ -1,0 +1,18 @@
+#!/bin/bash
+set -e
+
+echo "Running pre-push checks..."
+
+echo "==> Running tests..."
+go test -race ./...
+
+echo "==> Running vet..."
+go vet ./...
+
+echo "==> Running lint..."
+go run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run
+
+echo "==> Building..."
+go build ./cmd/smokepod
+
+echo "All checks passed!"
