@@ -1,0 +1,17 @@
+name: myapp-smoke
+version: "1"
+settings:
+  timeout: 10m
+  parallel: true
+  fail_fast: false
+tests:
+  - name: api-health
+    type: cli
+    image: curlimages/curl:latest
+    file: tests/api.test
+    run: [health, version]
+  - name: ui-smoke
+    type: playwright
+    image: mcr.microsoft.com/playwright:v1.40.0
+    path: tests/e2e
+    args: ["--project=chromium"]

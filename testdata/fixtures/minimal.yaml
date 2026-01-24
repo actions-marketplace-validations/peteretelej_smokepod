@@ -1,0 +1,7 @@
+name: myapp
+version: "1"
+tests:
+  - name: test1
+    type: cli
+    image: alpine
+    file: test.test
