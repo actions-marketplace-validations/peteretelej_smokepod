@@ -1,0 +1,217 @@
+# Test File Format
+
+Smokepod uses `.test` files to define CLI test cases with expected output.
+
+## Overview
+
+Test files contain named sections, each with commands and expected output:
+
+```
+## section_name
+$ command to run
+expected output
+
+$ another command
+more expected output
+```
+
+## Syntax Reference
+
+### Section Headers
+
+Start a new section with `## name`:
+
+```
+## health
+$ curl http://localhost:8080/health
+{"status":"ok"}
+
+## version
+$ curl http://localhost:8080/version
+{"version":"1.0.0"}
+```
+
+- Section names must be unique within a file
+- Sections can be targeted individually via config `run: [section1, section2]`
+- Without `run`, all sections execute in order
+
+### Commands
+
+Prefix commands with `$ `:
+
+```
+$ echo "hello"
+hello
+
+$ ls -la /tmp
+```
+
+### Expected Output
+
+Lines following a command (until empty line or next command) are expected output:
+
+```
+$ echo -e "line1\nline2"
+line1
+line2
+```
+
+Output matching is exact (line by line) unless using regex mode.
+
+### Regex Matching
+
+Suffix a line with ` (re)` for regex matching:
+
+```
+$ date
+\d{4}-\d{2}-\d{2} (re)
+
+$ curl http://api/users/1
+{"id":1,"created_at":".*"} (re)
+```
+
+The regex pattern is matched against the actual output line.
+
+### Exit Code Assertions
+
+Assert expected exit codes with `[exit:N]`:
+
+```
+$ exit 1
+[exit:1]
+
+$ grep "not found" /nonexistent
+[exit:2]
+
+$ false
+[exit:1]
+```
+
+Default expected exit code is `0`. The `[exit:N]` line can appear anywhere in the expected output.
+
+### Comments
+
+Lines starting with `#` (but not `##`) are comments:
+
+```
+# This is a comment
+## section_name
+# Another comment
+$ echo "hello"
+hello
+```
+
+### Empty Lines
+
+Empty lines separate commands within a section:
+
+```
+## example
+$ echo "first"
+first
+
+$ echo "second"
+second
+```
+
+## Complete Example
+
+```
+# API smoke tests
+
+## health
+$ curl -s http://host.docker.internal:8080/health
+{"status":"ok"}
+
+## auth
+# Test authentication endpoint
+$ curl -s -X POST http://host.docker.internal:8080/login \
+    -d '{"user":"test","pass":"test"}'
+{"token":".*"} (re)
+
+## errors
+# Verify proper error handling
+$ curl -s http://host.docker.internal:8080/nonexistent
+{"error":"not found"}
+[exit:0]
+
+$ curl -s --fail http://host.docker.internal:8080/nonexistent
+[exit:22]
+```
+
+## Common Patterns
+
+### Testing HTTP APIs
+
+```
+## api-tests
+$ curl -s http://host.docker.internal:8080/api/status
+{"status":"healthy"}
+
+$ curl -s -o /dev/null -w "%{http_code}" http://host.docker.internal:8080/api/health
+200
+```
+
+Note: Use `host.docker.internal` to reach services on the host from inside Docker containers.
+
+### Testing CLI Tools
+
+```
+## version
+$ myapp --version
+myapp version \d+\.\d+\.\d+ (re)
+
+## help
+$ myapp --help
+Usage: myapp [options]
+```
+
+### Testing Exit Codes
+
+```
+## success
+$ true
+
+## failure
+$ false
+[exit:1]
+
+## custom-exit
+$ exit 42
+[exit:42]
+```
+
+### Multi-line Output
+
+```
+## multi-line
+$ printf "line1\nline2\nline3"
+line1
+line2
+line3
+```
+
+## Parser Behavior
+
+1. Files are parsed top-to-bottom
+2. Commands must appear after a section header
+3. Duplicate section names cause a parse error
+4. Whitespace in expected output is significant
+5. Trailing newlines in actual output are trimmed for comparison
+
+## Error Messages
+
+Parse errors include line numbers:
+
+```
+line 5: command before section header
+line 12: duplicate section: health
+```
+
+Runtime errors show the command and line:
+
+```
+section "health", command at line 3: output mismatch
+  expected: {"status":"ok"}
+  actual:   {"status":"error"}
+```

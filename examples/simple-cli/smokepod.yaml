@@ -1,0 +1,11 @@
+name: simple-cli-example
+version: "1"
+
+settings:
+  timeout: 2m
+
+tests:
+  - name: basic-commands
+    type: cli
+    image: alpine:latest
+    file: tests/basic.test

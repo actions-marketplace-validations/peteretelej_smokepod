@@ -1,5 +1,10 @@
 # Smokepod
 
+[![CI](https://github.com/peteretelej/smokepod/actions/workflows/ci.yml/badge.svg)](https://github.com/peteretelej/smokepod/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/peteretelej/smokepod)](https://goreportcard.com/report/github.com/peteretelej/smokepod)
+[![Go Reference](https://pkg.go.dev/badge/github.com/peteretelej/smokepod.svg)](https://pkg.go.dev/github.com/peteretelej/smokepod)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Containerized smoke test runner. Execute CLI and browser tests against built artifacts in isolated Docker containers.
 
 ## Features
@@ -91,6 +96,14 @@ $ failing command
 ## Requirements
 
 - Docker
+
+## Documentation
+
+- [Configuration Reference](docs/config-reference.md) - All config options
+- [Test File Format](docs/test-format.md) - `.test` file syntax
+- [Playwright Integration](docs/playwright.md) - Browser testing setup
+- [Go Library Usage](docs/library.md) - Using smokepod as a library
+- [Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
 
 ## License
 

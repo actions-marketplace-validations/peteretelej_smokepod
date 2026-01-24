@@ -1,0 +1,11 @@
+name: playwright-example
+version: "1"
+
+settings:
+  timeout: 10m
+
+tests:
+  - name: e2e
+    type: playwright
+    path: .
+    image: mcr.microsoft.com/playwright:v1.45.0-jammy
