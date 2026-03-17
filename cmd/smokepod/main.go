@@ -290,7 +290,7 @@ func validateAction(c *cli.Context) error {
 
 func recordAction(c *cli.Context) error {
 	target := c.String("target")
-	_ = c.StringSlice("target-arg") // accepted, used in Phase 3
+	targetArgs := c.StringSlice("target-arg")
 	testsPath := c.String("tests")
 	fixturesPath := c.String("fixtures")
 	update := c.Bool("update")
@@ -337,7 +337,7 @@ func recordAction(c *cli.Context) error {
 		cancel()
 	}()
 
-	targetExec := smokepod.NewLocalTarget(target, nil)
+	targetExec := smokepod.NewLocalTarget(target, targetArgs, nil)
 	platform := smokepod.DetectPlatform(ctx, targetExec)
 
 	recorded := 0
@@ -409,7 +409,7 @@ func recordAction(c *cli.Context) error {
 
 func verifyAction(c *cli.Context) error {
 	target := c.String("target")
-	_ = c.StringSlice("target-arg") // accepted, used in Phase 3
+	targetArgs := c.StringSlice("target-arg")
 	testsPath := c.String("tests")
 	fixturesPath := c.String("fixtures")
 	mode := c.String("mode")
@@ -446,14 +446,14 @@ func verifyAction(c *cli.Context) error {
 
 	var targetExec smokepod.Target
 	if mode == "process" {
-		procTarget, err := smokepod.NewProcessTarget(ctx, target)
+		procTarget, err := smokepod.NewProcessTarget(ctx, target, targetArgs...)
 		if err != nil {
 			return cli.Exit(fmt.Sprintf("Error creating process target: %v", err), exitRuntimeError)
 		}
 		defer func() { _ = procTarget.Close() }()
 		targetExec = procTarget
 	} else {
-		targetExec = smokepod.NewLocalTarget(target, nil)
+		targetExec = smokepod.NewLocalTarget(target, targetArgs, nil)
 	}
 
 	return runVerify(c, ctx, targetExec, testFiles, testsPath, fixturesPath, failFast, jsonOutput)

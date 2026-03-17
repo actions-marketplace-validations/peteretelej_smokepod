@@ -1,7 +1,6 @@
 package smokepod
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,12 +13,69 @@ import (
 	"github.com/peteretelej/smokepod/pkg/smokepod/runners"
 )
 
+const stderrTailMaxSize = 32 * 1024 // 32KB
+
+// stderrTailBuffer is a fixed-size ring buffer that keeps the last N bytes
+// written to it. It has its own dedicated mutex separate from ProcessTarget.mu.
+type stderrTailBuffer struct {
+	mu   sync.Mutex
+	buf  []byte
+	size int
+	pos  int
+	full bool
+}
+
+func newStderrTailBuffer(size int) *stderrTailBuffer {
+	return &stderrTailBuffer{
+		buf:  make([]byte, size),
+		size: size,
+	}
+}
+
+func (b *stderrTailBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	n := len(p)
+	if n >= b.size {
+		// Data is larger than buffer; keep only the last b.size bytes
+		copy(b.buf, p[n-b.size:])
+		b.pos = 0
+		b.full = true
+		return n, nil
+	}
+
+	for i := 0; i < n; i++ {
+		b.buf[b.pos] = p[i]
+		b.pos = (b.pos + 1) % b.size
+		if b.pos == 0 {
+			b.full = true
+		}
+	}
+	return n, nil
+}
+
+func (b *stderrTailBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.full {
+		return string(b.buf[:b.pos])
+	}
+	// Ring buffer: data from pos..end + 0..pos
+	out := make([]byte, b.size)
+	copy(out, b.buf[b.pos:])
+	copy(out[b.size-b.pos:], b.buf[:b.pos])
+	return string(out)
+}
+
 type ProcessTarget struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout *bufio.Scanner
-	stderr io.Reader
-	mu     sync.Mutex
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	decoder   *json.Decoder
+	stderrBuf *stderrTailBuffer
+	mu        sync.Mutex
+	wg        sync.WaitGroup
 }
 
 type processRequest struct {
@@ -32,8 +88,8 @@ type processResponse struct {
 	ExitCode int    `json:"exit_code"`
 }
 
-func NewProcessTarget(ctx context.Context, command string) (*ProcessTarget, error) {
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+func NewProcessTarget(ctx context.Context, path string, args ...string) (*ProcessTarget, error) {
+	cmd := exec.CommandContext(ctx, path, args...)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -54,32 +110,41 @@ func NewProcessTarget(ctx context.Context, command string) (*ProcessTarget, erro
 		return nil, fmt.Errorf("starting process: %w", err)
 	}
 
-	scanner := bufio.NewScanner(stdoutPipe)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-
 	pt := &ProcessTarget{
-		cmd:    cmd,
-		stdin:  stdin,
-		stdout: scanner,
-		stderr: stderrPipe,
+		cmd:       cmd,
+		stdin:     stdin,
+		decoder:   json.NewDecoder(stdoutPipe),
+		stderrBuf: newStderrTailBuffer(stderrTailMaxSize),
 	}
 
-	go pt.drainStderr()
+	pt.wg.Add(1)
+	go func() {
+		defer pt.wg.Done()
+		pt.drainStderr(stderrPipe)
+	}()
 
 	return pt, nil
 }
 
-func (p *ProcessTarget) drainStderr() {
+func (p *ProcessTarget) drainStderr(r io.Reader) {
 	buf := make([]byte, 4096)
 	for {
-		n, err := p.stderr.Read(buf)
+		n, err := r.Read(buf)
 		if n > 0 {
-			_ = n
+			_, _ = p.stderrBuf.Write(buf[:n])
 		}
 		if err != nil {
 			break
 		}
 	}
+}
+
+func (p *ProcessTarget) stderrTail() string {
+	tail := p.stderrBuf.String()
+	if tail == "" {
+		return ""
+	}
+	return " (stderr tail: " + tail + ")"
 }
 
 func (p *ProcessTarget) Exec(ctx context.Context, command string) (runners.ExecResult, error) {
@@ -93,7 +158,7 @@ func (p *ProcessTarget) Exec(ctx context.Context, command string) (runners.ExecR
 	}
 
 	if _, err := fmt.Fprintf(p.stdin, "%s\n", reqData); err != nil {
-		return runners.ExecResult{}, fmt.Errorf("writing request (process may have crashed): %w", err)
+		return runners.ExecResult{}, fmt.Errorf("writing request (process may have crashed)%s: %w", p.stderrTail(), err)
 	}
 
 	type readResult struct {
@@ -103,17 +168,9 @@ func (p *ProcessTarget) Exec(ctx context.Context, command string) (runners.ExecR
 
 	ch := make(chan readResult, 1)
 	go func() {
-		if !p.stdout.Scan() {
-			if err := p.stdout.Err(); err != nil {
-				ch <- readResult{err: fmt.Errorf("reading response: %w", err)}
-			} else {
-				ch <- readResult{err: fmt.Errorf("process exited unexpectedly")}
-			}
-			return
-		}
 		var resp processResponse
-		if err := json.Unmarshal(p.stdout.Bytes(), &resp); err != nil {
-			ch <- readResult{err: fmt.Errorf("parsing response %q: %w", p.stdout.Text(), err)}
+		if err := p.decoder.Decode(&resp); err != nil {
+			ch <- readResult{err: fmt.Errorf("reading response%s: %w", p.stderrTail(), err)}
 			return
 		}
 		ch <- readResult{resp: resp}
@@ -146,6 +203,7 @@ func (p *ProcessTarget) Close() error {
 
 	select {
 	case err := <-done:
+		p.wg.Wait() // ensure drainStderr has finished
 		if err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == -1 {
 				return p.killProcess()

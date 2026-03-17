@@ -23,13 +23,42 @@ func TestHelperProcess(t *testing.T) {
 	mode := os.Getenv("SMOKEPOD_TEST_MODE")
 	switch mode {
 	case "crash":
-		// Exit immediately without reading stdin
+		fmt.Fprintln(os.Stderr, "helper: crashing on startup")
 		os.Exit(1)
 	case "bad_json":
-		// Write invalid JSON for every request
+		// Write invalid JSON for every request, with stderr output
+		fmt.Fprintln(os.Stderr, "helper: sending bad json")
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
 			fmt.Println("not valid json {{{")
+		}
+		os.Exit(0)
+	case "stderr_output":
+		// Normal JSONL server that also writes to stderr
+		fmt.Fprintln(os.Stderr, "helper: stderr output for testing")
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			var req processRequest
+			if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
+				os.Exit(2)
+			}
+			cmd := exec.Command("sh", "-c", req.Command)
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			exitCode := 0
+			if err := cmd.Run(); err != nil {
+				if exitErr, ok := err.(*exec.ExitError); ok {
+					exitCode = exitErr.ExitCode()
+				}
+			}
+			resp := processResponse{
+				Stdout:   stdout.String(),
+				Stderr:   stderr.String(),
+				ExitCode: exitCode,
+			}
+			data, _ := json.Marshal(resp)
+			fmt.Println(string(data))
 		}
 		os.Exit(0)
 	default:
@@ -62,8 +91,9 @@ func TestHelperProcess(t *testing.T) {
 	}
 }
 
-func helperCommand() string {
-	return fmt.Sprintf("%s -test.run=TestHelperProcess", os.Args[0])
+// helperCommand returns the path and args for spawning the test helper process.
+func helperCommand() (path string, args []string) {
+	return os.Args[0], []string{"-test.run=TestHelperProcess", "--"}
 }
 
 func helperEnv(mode string) []string {
@@ -75,9 +105,7 @@ func helperEnv(mode string) []string {
 
 func newTestProcessTarget(t *testing.T, mode string) *ProcessTarget {
 	t.Helper()
-	// We need to set the env vars before creating the target, so we create
-	// the process manually using the helper command.
-	cmd := helperCommand()
+	path, args := helperCommand()
 	env := helperEnv(mode)
 
 	// Set env vars for the subprocess
@@ -87,7 +115,7 @@ func newTestProcessTarget(t *testing.T, mode string) *ProcessTarget {
 	}
 
 	ctx := context.Background()
-	target, err := NewProcessTarget(ctx, cmd)
+	target, err := NewProcessTarget(ctx, path, args...)
 	if err != nil {
 		t.Fatalf("NewProcessTarget failed: %v", err)
 	}
@@ -168,8 +196,33 @@ func TestProcessTarget_ExecMalformedJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
-	if !strings.Contains(err.Error(), "parsing response") {
-		t.Errorf("error = %q, want it to contain %q", err.Error(), "parsing response")
+	if !strings.Contains(err.Error(), "reading response") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "reading response")
+	}
+}
+
+func TestProcessTarget_ExecMalformedJSON_IncludesStderr(t *testing.T) {
+	target := newTestProcessTarget(t, "bad_json")
+
+	_, err := target.Exec(context.Background(), "echo hello")
+	if err == nil {
+		t.Fatal("expected error for malformed JSON, got nil")
+	}
+	if !strings.Contains(err.Error(), "stderr tail:") {
+		t.Errorf("error = %q, want it to contain stderr tail", err.Error())
+	}
+}
+
+func TestProcessTarget_ExecCrash_IncludesStderr(t *testing.T) {
+	target := newTestProcessTarget(t, "crash")
+
+	_, err := target.Exec(context.Background(), "echo hello")
+	if err == nil {
+		t.Fatal("expected error for crashed process, got nil")
+	}
+	// The crash mode writes to stderr before exiting; the error should include it
+	if !strings.Contains(err.Error(), "stderr tail:") {
+		t.Errorf("error = %q, want it to contain stderr tail", err.Error())
 	}
 }
 
@@ -201,5 +254,96 @@ func TestProcessTarget_Close(t *testing.T) {
 	// (cleanup runs via t.Cleanup, but test explicit close too)
 	if err := target.Close(); err != nil {
 		t.Errorf("Close returned error: %v", err)
+	}
+}
+
+func TestProcessTarget_DirectExecArgs(t *testing.T) {
+	// Verify that NewProcessTarget passes args directly (no sh -c wrapping)
+	path, args := helperCommand()
+	env := helperEnv("")
+
+	for _, e := range env {
+		parts := strings.SplitN(e, "=", 2)
+		t.Setenv(parts[0], parts[1])
+	}
+
+	ctx := context.Background()
+	target, err := NewProcessTarget(ctx, path, args...)
+	if err != nil {
+		t.Fatalf("NewProcessTarget failed: %v", err)
+	}
+	defer func() { _ = target.Close() }()
+
+	result, err := target.Exec(context.Background(), "echo direct")
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if result.Stdout != "direct\n" {
+		t.Errorf("Stdout = %q, want %q", result.Stdout, "direct\n")
+	}
+}
+
+func TestProcessTarget_LargeResponse(t *testing.T) {
+	// Generate a response payload slightly above 1MB (1.1MB) to verify
+	// json.Decoder has no fixed buffer limit like bufio.Scanner did.
+	target := newTestProcessTarget(t, "")
+
+	// Generate ~1.1MB of output (1.1 * 1024 * 1024 bytes)
+	size := 1100 * 1024
+	// Use printf to generate a string of 'A' characters
+	cmd := fmt.Sprintf("printf '%%*s' %d '' | tr ' ' 'A'", size)
+	result, err := target.Exec(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("Exec failed for >1MB response: %v", err)
+	}
+	if len(result.Stdout) < size {
+		t.Errorf("Stdout length = %d, want >= %d", len(result.Stdout), size)
+	}
+}
+
+func TestProcessTarget_StderrBuffering(t *testing.T) {
+	// Use stderr_output mode which writes to stderr during normal operation
+	target := newTestProcessTarget(t, "stderr_output")
+
+	result, err := target.Exec(context.Background(), "echo works")
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if result.Stdout != "works\n" {
+		t.Errorf("Stdout = %q, want %q", result.Stdout, "works\n")
+	}
+
+	// The stderr buffer should have captured output from the helper
+	tail := target.stderrBuf.String()
+	if !strings.Contains(tail, "helper: stderr output") {
+		t.Errorf("stderr buffer = %q, want it to contain helper stderr output", tail)
+	}
+}
+
+func TestStderrTailBuffer_Basic(t *testing.T) {
+	buf := newStderrTailBuffer(16)
+	buf.Write([]byte("hello"))
+	if got := buf.String(); got != "hello" {
+		t.Errorf("String() = %q, want %q", got, "hello")
+	}
+}
+
+func TestStderrTailBuffer_Overflow(t *testing.T) {
+	buf := newStderrTailBuffer(8)
+	buf.Write([]byte("abcdefghijklmnop")) // 16 bytes into 8-byte buffer
+	got := buf.String()
+	if got != "ijklmnop" {
+		t.Errorf("String() = %q, want %q", got, "ijklmnop")
+	}
+}
+
+func TestStderrTailBuffer_IncrementalOverflow(t *testing.T) {
+	buf := newStderrTailBuffer(8)
+	buf.Write([]byte("abcd"))
+	buf.Write([]byte("efgh"))
+	buf.Write([]byte("ij"))
+	got := buf.String()
+	if got != "cdefghij" {
+		t.Errorf("String() = %q, want %q", got, "cdefghij")
 	}
 }

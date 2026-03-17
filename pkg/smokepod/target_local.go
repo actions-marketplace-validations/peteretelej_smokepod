@@ -11,22 +11,22 @@ import (
 )
 
 type LocalTarget struct {
-	shell string
-	env   []string
+	spec targetLaunchSpec
+	env  []string
 }
 
-func NewLocalTarget(shell string, env []string) *LocalTarget {
-	if shell == "" {
-		shell = "/bin/sh"
+func NewLocalTarget(path string, args []string, env []string) *LocalTarget {
+	if path == "" {
+		path = "/bin/sh"
 	}
 	return &LocalTarget{
-		shell: shell,
-		env:   env,
+		spec: targetLaunchSpec{path: path, args: args},
+		env:  env,
 	}
 }
 
 func (t *LocalTarget) Exec(ctx context.Context, command string) (runners.ExecResult, error) {
-	cmd := exec.CommandContext(ctx, t.shell, "-c", command)
+	cmd := t.spec.cmd(ctx, "-c", command)
 	cmd.Env = append(os.Environ(), t.env...)
 
 	var stdout, stderr strings.Builder
@@ -57,7 +57,15 @@ func (t *LocalTarget) Close() error {
 }
 
 func (t *LocalTarget) GetVersion(ctx context.Context) string {
-	cmd := exec.CommandContext(ctx, t.shell, "--version")
+	var cmd *exec.Cmd
+	if len(t.spec.args) > 0 {
+		// Fixed args exist: run path, args..., "--version"
+		cmd = t.spec.cmd(ctx, "--version")
+	} else {
+		// No fixed args: run path, "--version"
+		cmd = exec.CommandContext(ctx, t.spec.path, "--version")
+	}
+
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
 

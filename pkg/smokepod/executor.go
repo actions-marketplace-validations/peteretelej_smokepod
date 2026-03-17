@@ -296,13 +296,10 @@ func (e *Executor) createTarget(ctx context.Context, test TestDefinition) (Targe
 	}
 
 	if test.Target != "" {
-		// targetArgs accepted here; constructors updated in Phase 3.
-		_ = test.TargetArgs
-
 		if test.Mode == "process" {
-			return NewProcessTarget(ctx, test.Target)
+			return NewProcessTarget(ctx, test.Target, test.TargetArgs...)
 		}
-		return NewLocalTarget(test.Target, nil), nil
+		return NewLocalTarget(test.Target, test.TargetArgs, nil), nil
 	}
 
 	return nil, fmt.Errorf("test must specify image or target")
