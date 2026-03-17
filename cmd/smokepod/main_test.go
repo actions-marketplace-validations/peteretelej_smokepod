@@ -23,6 +23,8 @@ func newTestApp() *cli.App {
 		Commands: []*cli.Command{
 			runCommand(),
 			validateCommand(),
+			recordCommand(),
+			verifyCommand(),
 		},
 	}
 }
@@ -214,5 +216,120 @@ func TestConfigDir(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("configDir(%q) = %q, want %q", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestCLI_RecordCommand_TargetArgFlag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "no target-arg flags",
+			args: []string{"smokepod", "record", "--target", "/bin/bash", "--tests", "tests", "--fixtures", "fixtures"},
+		},
+		{
+			name: "single target-arg",
+			args: []string{"smokepod", "record", "--target", "/bin/bash", "--target-arg", "--norc", "--tests", "tests", "--fixtures", "fixtures"},
+		},
+		{
+			name: "multiple target-arg flags",
+			args: []string{"smokepod", "record", "--target", "/bin/bash", "--target-arg", "--norc", "--target-arg", "--noprofile", "--tests", "tests", "--fixtures", "fixtures"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := quietTestApp()
+			// The action will fail because test paths don't exist, but
+			// we verify the flags are accepted without a parse error.
+			err := app.Run(tt.args)
+			if err != nil {
+				exitErr, ok := err.(cli.ExitCoder)
+				if ok && exitErr.ExitCode() == exitConfigError {
+					// Expected: paths don't exist
+					return
+				}
+				// Also acceptable: runtime error due to non-existent paths
+				if ok && exitErr.ExitCode() == exitRuntimeError {
+					return
+				}
+				// Check it's not a flag parse error
+				if strings.Contains(err.Error(), "flag") && strings.Contains(err.Error(), "not defined") {
+					t.Errorf("flag parse error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestCLI_VerifyCommand_TargetArgFlag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "no target-arg flags",
+			args: []string{"smokepod", "verify", "--target", "/bin/bash", "--tests", "tests", "--fixtures", "fixtures"},
+		},
+		{
+			name: "single target-arg",
+			args: []string{"smokepod", "verify", "--target", "/bin/bash", "--target-arg", "--norc", "--tests", "tests", "--fixtures", "fixtures"},
+		},
+		{
+			name: "multiple target-arg flags",
+			args: []string{"smokepod", "verify", "--target", "/bin/bash", "--target-arg", "--norc", "--target-arg", "--noprofile", "--tests", "tests", "--fixtures", "fixtures"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := quietTestApp()
+			err := app.Run(tt.args)
+			if err != nil {
+				exitErr, ok := err.(cli.ExitCoder)
+				if ok && (exitErr.ExitCode() == exitConfigError || exitErr.ExitCode() == exitRuntimeError) {
+					return
+				}
+				if strings.Contains(err.Error(), "flag") && strings.Contains(err.Error(), "not defined") {
+					t.Errorf("flag parse error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestCLI_AllowEmptyFlag(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		args    []string
+	}{
+		{
+			name:    "record with allow-empty",
+			command: "record",
+			args:    []string{"smokepod", "record", "--target", "/bin/bash", "--tests", "tests", "--fixtures", "fixtures", "--allow-empty"},
+		},
+		{
+			name:    "verify with allow-empty",
+			command: "verify",
+			args:    []string{"smokepod", "verify", "--target", "/bin/bash", "--tests", "tests", "--fixtures", "fixtures", "--allow-empty"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := quietTestApp()
+			err := app.Run(tt.args)
+			if err != nil {
+				exitErr, ok := err.(cli.ExitCoder)
+				if ok && (exitErr.ExitCode() == exitConfigError || exitErr.ExitCode() == exitRuntimeError) {
+					return
+				}
+				if strings.Contains(err.Error(), "flag") && strings.Contains(err.Error(), "not defined") {
+					t.Errorf("flag parse error: %v", err)
+				}
+			}
+		})
 	}
 }

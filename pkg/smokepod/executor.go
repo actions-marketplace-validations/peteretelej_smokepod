@@ -296,6 +296,9 @@ func (e *Executor) createTarget(ctx context.Context, test TestDefinition) (Targe
 	}
 
 	if test.Target != "" {
+		// targetArgs accepted here; constructors updated in Phase 3.
+		_ = test.TargetArgs
+
 		if test.Mode == "process" {
 			return NewProcessTarget(ctx, test.Target)
 		}

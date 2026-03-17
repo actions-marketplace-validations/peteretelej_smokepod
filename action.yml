@@ -9,8 +9,12 @@ inputs:
     description: 'record, verify, or run'
     required: true
   target:
-    description: 'Target command (for shell/process mode)'
+    description: 'Path to the target executable'
     required: false
+  target-args:
+    description: 'Fixed arguments for the target executable (one per line)'
+    required: false
+    default: ''
   tests:
     description: 'Path to .test files'
     required: false
@@ -116,6 +120,7 @@ runs:
       env:
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_TARGET: ${{ inputs.target }}
+        INPUT_TARGET_ARGS: ${{ inputs.target-args }}
         INPUT_TESTS: ${{ inputs.tests }}
         INPUT_FIXTURES: ${{ inputs.fixtures }}
         INPUT_CONFIG: ${{ inputs.config }}

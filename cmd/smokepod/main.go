@@ -91,8 +91,12 @@ func recordCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "target",
-				Usage:    "Shell to use for recording",
+				Usage:    "Path to the target executable",
 				Required: true,
+			},
+			&cli.StringSliceFlag{
+				Name:  "target-arg",
+				Usage: "Fixed argument for the target executable (repeatable)",
 			},
 			&cli.StringFlag{
 				Name:     "tests",
@@ -117,6 +121,10 @@ func recordCommand() *cli.Command {
 				Name:  "run",
 				Usage: "Run specific sections (comma-separated)",
 			},
+			&cli.BoolFlag{
+				Name:  "allow-empty",
+				Usage: "Allow empty test discovery (no .test files found)",
+			},
 		},
 		Action: recordAction,
 	}
@@ -129,8 +137,12 @@ func verifyCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "target",
-				Usage:    "Target command (shell or process)",
+				Usage:    "Path to the target executable",
 				Required: true,
+			},
+			&cli.StringSliceFlag{
+				Name:  "target-arg",
+				Usage: "Fixed argument for the target executable (repeatable)",
 			},
 			&cli.StringFlag{
 				Name:     "tests",
@@ -163,6 +175,10 @@ func verifyCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:  "run",
 				Usage: "Run specific sections (comma-separated)",
+			},
+			&cli.BoolFlag{
+				Name:  "allow-empty",
+				Usage: "Allow empty test discovery (no .test files found)",
 			},
 		},
 		Action: verifyAction,
@@ -274,11 +290,13 @@ func validateAction(c *cli.Context) error {
 
 func recordAction(c *cli.Context) error {
 	target := c.String("target")
+	_ = c.StringSlice("target-arg") // accepted, used in Phase 3
 	testsPath := c.String("tests")
 	fixturesPath := c.String("fixtures")
 	update := c.Bool("update")
 	timeout := c.Duration("timeout")
 	runFlag := c.String("run")
+	_ = c.Bool("allow-empty") // accepted, used in Phase 4
 
 	if os.Getenv("CI") != "" && !update {
 		fmt.Fprintln(os.Stderr, "Warning: CI environment detected; use --update to overwrite fixtures")
@@ -391,12 +409,14 @@ func recordAction(c *cli.Context) error {
 
 func verifyAction(c *cli.Context) error {
 	target := c.String("target")
+	_ = c.StringSlice("target-arg") // accepted, used in Phase 3
 	testsPath := c.String("tests")
 	fixturesPath := c.String("fixtures")
 	mode := c.String("mode")
 	failFast := c.Bool("fail-fast")
 	timeout := c.Duration("timeout")
 	jsonOutput := c.Bool("json")
+	_ = c.Bool("allow-empty") // accepted, used in Phase 4
 
 	testFiles, err := smokepod.FindTestFiles(testsPath)
 	if err != nil {

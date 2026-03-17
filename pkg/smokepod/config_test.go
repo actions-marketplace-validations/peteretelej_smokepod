@@ -241,3 +241,74 @@ func TestParseConfig_PlaywrightWithTarget(t *testing.T) {
 		t.Errorf("error = %q, want to contain %q", err.Error(), "target is not supported for playwright")
 	}
 }
+
+func TestValidateTest_TargetArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		test    TestDefinition
+		wantErr string
+	}{
+		{
+			name: "valid target_args with target and cli type",
+			test: TestDefinition{
+				Name:       "test",
+				Type:       "cli",
+				Target:     "/bin/bash",
+				TargetArgs: []string{"--norc"},
+				File:       "test.test",
+			},
+			wantErr: "",
+		},
+		{
+			name: "empty target_args is allowed",
+			test: TestDefinition{
+				Name:       "test",
+				Type:       "cli",
+				Target:     "/bin/bash",
+				TargetArgs: []string{},
+				File:       "test.test",
+			},
+			wantErr: "",
+		},
+		{
+			name: "target_args without target",
+			test: TestDefinition{
+				Name:       "test",
+				Type:       "cli",
+				Image:      "alpine",
+				TargetArgs: []string{"--norc"},
+				File:       "test.test",
+			},
+			wantErr: "target_args requires a non-empty target",
+		},
+		{
+			name: "target_args with playwright type",
+			test: TestDefinition{
+				Name:       "test",
+				Type:       "playwright",
+				Target:     "/bin/bash",
+				TargetArgs: []string{"--norc"},
+				Path:       "tests/e2e",
+			},
+			wantErr: "target_args is only valid for cli tests",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateTest(tt.test, 0)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("error = %q, want to contain %q", err.Error(), tt.wantErr)
+				}
+			}
+		})
+	}
+}

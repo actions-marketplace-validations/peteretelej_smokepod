@@ -33,15 +33,16 @@ func (s Settings) IsParallel() bool {
 
 // TestDefinition represents a single test configuration.
 type TestDefinition struct {
-	Name   string   `yaml:"name"`
-	Type   string   `yaml:"type"`  // "cli" or "playwright"
-	Image  string   `yaml:"image"` // mutually exclusive with Target
-	Target string   `yaml:"target"`
-	Mode   string   `yaml:"mode"` // "shell" (default) or "process"
-	File   string   `yaml:"file"` // for cli tests
-	Run    []string `yaml:"run"`  // specific sections to run
-	Path   string   `yaml:"path"` // for playwright tests
-	Args   []string `yaml:"args"` // for playwright tests
+	Name       string   `yaml:"name"`
+	Type       string   `yaml:"type"`  // "cli" or "playwright"
+	Image      string   `yaml:"image"` // mutually exclusive with Target
+	Target     string   `yaml:"target"`
+	TargetArgs []string `yaml:"target_args"` // fixed arguments for target executable
+	Mode       string   `yaml:"mode"`        // "shell" (default) or "process"
+	File       string   `yaml:"file"`        // for cli tests
+	Run        []string `yaml:"run"`         // specific sections to run
+	Path       string   `yaml:"path"`        // for playwright tests
+	Args       []string `yaml:"args"`        // for playwright tests
 }
 
 // ParseConfig loads and validates a configuration file.
@@ -128,6 +129,15 @@ func validateTest(test TestDefinition, index int) error {
 		}
 		if test.File == "" {
 			return fmt.Errorf("%s: file is required for cli tests", prefix)
+		}
+	}
+
+	if len(test.TargetArgs) > 0 {
+		if test.Target == "" {
+			return fmt.Errorf("%s: target_args requires a non-empty target", prefix)
+		}
+		if test.Type != "cli" {
+			return fmt.Errorf("%s: target_args is only valid for cli tests", prefix)
 		}
 	}
 
