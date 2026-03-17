@@ -33,6 +33,7 @@ func main() {
 			runCommand(),
 			validateCommand(),
 			recordCommand(),
+			verifyCommand(),
 		},
 	}
 
@@ -117,6 +118,53 @@ func recordCommand() *cli.Command {
 			},
 		},
 		Action: recordAction,
+	}
+}
+
+func verifyCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "verify",
+		Usage: "Verify command outputs against fixtures",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "target",
+				Usage:    "Target command (shell or process)",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "tests",
+				Usage:    "Path to test files",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "fixtures",
+				Usage:    "Path to fixtures directory",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:  "mode",
+				Usage: "Target mode: shell (default) or process",
+				Value: "shell",
+			},
+			&cli.BoolFlag{
+				Name:  "fail-fast",
+				Usage: "Stop on first failure",
+			},
+			&cli.DurationFlag{
+				Name:  "timeout",
+				Usage: "Command timeout",
+				Value: 30 * time.Second,
+			},
+			&cli.BoolFlag{
+				Name:  "json",
+				Usage: "JSON output",
+			},
+			&cli.StringFlag{
+				Name:  "run",
+				Usage: "Run specific sections (comma-separated)",
+			},
+		},
+		Action: verifyAction,
 	}
 }
 
@@ -331,6 +379,172 @@ func recordAction(c *cli.Context) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "\nSummary: %d recorded, %d skipped\n", recorded, skipped)
+	return nil
+}
+
+func verifyAction(c *cli.Context) error {
+	target := c.String("target")
+	testsPath := c.String("tests")
+	fixturesPath := c.String("fixtures")
+	mode := c.String("mode")
+	failFast := c.Bool("fail-fast")
+	timeout := c.Duration("timeout")
+	_ = c.Bool("json")
+	runFlag := c.String("run")
+
+	if mode == "process" {
+		return cli.Exit("Error: process target not yet implemented", exitRuntimeError)
+	}
+
+	var runSections []string
+	if runFlag != "" {
+		runSections = strings.Split(runFlag, ",")
+		for i, s := range runSections {
+			runSections[i] = strings.TrimSpace(s)
+		}
+	}
+
+	testFiles, err := smokepod.FindTestFiles(testsPath)
+	if err != nil {
+		return cli.Exit(fmt.Sprintf("Error finding test files: %v", err), exitConfigError)
+	}
+
+	if len(testFiles) == 0 {
+		fmt.Fprintf(os.Stderr, "No .test files found in %s\n", testsPath)
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Duration(len(testFiles)))
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	targetExec := smokepod.NewLocalTarget(target, nil)
+
+	reporter := smokepod.NewVerifyReporter(os.Stderr)
+
+	totalPassed := 0
+	totalFailed := 0
+	totalCommands := 0
+
+	for _, testFile := range testFiles {
+		fixturePath := smokepod.FixturePathFromTest(testFile, testsPath, fixturesPath)
+
+		fixture, err := smokepod.ReadFixture(fixturePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading fixture %s: %v\n", fixturePath, err)
+			totalFailed++
+			if failFast {
+				break
+			}
+			continue
+		}
+
+		tf, err := testfile.Parse(testFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", testFile, err)
+			totalFailed++
+			if failFast {
+				break
+			}
+			continue
+		}
+
+		sections, err := tf.GetSections(runSections)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting sections from %s: %v\n", testFile, err)
+			totalFailed++
+			if failFast {
+				break
+			}
+			continue
+		}
+
+		for _, section := range sections {
+			sectionPassed := true
+
+			fixtureCommands, hasFixture := fixture.Sections[section.Name]
+			if !hasFixture {
+				fmt.Fprintf(os.Stderr, "\nMissing fixture for section: %s\n", section.Name)
+				reporter.ReportSection(section.Name, false)
+				totalFailed++
+				sectionPassed = false
+				if failFast {
+					break
+				}
+				continue
+			}
+
+			for i, cmd := range section.Commands {
+				totalCommands++
+
+				result, err := targetExec.Exec(ctx, cmd.Cmd)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
+					totalFailed++
+					sectionPassed = false
+					if failFast {
+						break
+					}
+					continue
+				}
+
+				if i >= len(fixtureCommands) {
+					fmt.Fprintf(os.Stderr, "\nMissing fixture for command: %s\n", cmd.Cmd)
+					reporter.ReportSection(section.Name, false)
+					totalFailed++
+					sectionPassed = false
+					if failFast {
+						break
+					}
+					continue
+				}
+
+				expected := fixtureCommands[i]
+
+				compareResult := smokepod.CompareOutput(expected.Stdout, result.Stdout)
+				exitMatched := smokepod.CompareExitCode(expected.ExitCode, result.ExitCode)
+
+				if compareResult.Matched && exitMatched {
+					totalPassed++
+				} else {
+					sectionPassed = false
+					totalFailed++
+
+					var diffParts []string
+					if !compareResult.Matched {
+						diffParts = append(diffParts, compareResult.Diff)
+					}
+					if !exitMatched {
+						diffParts = append(diffParts, fmt.Sprintf("Exit code: expected %d, got %d", expected.ExitCode, result.ExitCode))
+					}
+
+					reporter.ReportFailure(fmt.Sprintf("%s / %s", section.Name, cmd.Cmd), strings.Join(diffParts, "\n"))
+				}
+			}
+
+			reporter.ReportSection(section.Name, sectionPassed)
+
+			if !sectionPassed && failFast {
+				break
+			}
+		}
+
+		if totalFailed > 0 && failFast {
+			break
+		}
+	}
+
+	reporter.ReportSummary(totalPassed, totalFailed, totalCommands)
+
+	if totalFailed > 0 {
+		return cli.Exit("", exitTestFailure)
+	}
 	return nil
 }
 
