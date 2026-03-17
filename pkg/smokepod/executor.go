@@ -297,7 +297,7 @@ func (e *Executor) createTarget(ctx context.Context, test TestDefinition) (Targe
 
 	if test.Target != "" {
 		if test.Mode == "process" {
-			return nil, fmt.Errorf("process mode not yet implemented (Phase 4)")
+			return NewProcessTarget(ctx, test.Target)
 		}
 		return NewLocalTarget(test.Target, nil), nil
 	}

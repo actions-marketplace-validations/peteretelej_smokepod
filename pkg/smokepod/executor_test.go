@@ -266,19 +266,24 @@ func TestExecutor_CreateTarget_Local(t *testing.T) {
 	}
 }
 
-func TestExecutor_CreateTarget_ProcessModeNotImplemented(t *testing.T) {
+func TestExecutor_CreateTarget_ProcessMode(t *testing.T) {
 	cfg := &Config{
 		Name:    "test",
 		Version: "1",
 		Tests: []TestDefinition{
-			{Name: "test", Type: "cli", Target: "/bin/sh", Mode: "process", File: "test.test"},
+			{Name: "test", Type: "cli", Target: "cat", Mode: "process", File: "test.test"},
 		},
 	}
 
 	e := NewExecutor(cfg)
 
-	_, err := e.createTarget(context.Background(), cfg.Tests[0])
-	if err == nil {
-		t.Fatal("expected error for process mode, got nil")
+	target, err := e.createTarget(context.Background(), cfg.Tests[0])
+	if err != nil {
+		t.Fatalf("createTarget failed: %v", err)
+	}
+	defer func() { _ = target.Close() }()
+
+	if _, ok := target.(*ProcessTarget); !ok {
+		t.Errorf("target is %T, want *ProcessTarget", target)
 	}
 }

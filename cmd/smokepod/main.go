@@ -390,19 +390,6 @@ func verifyAction(c *cli.Context) error {
 	failFast := c.Bool("fail-fast")
 	timeout := c.Duration("timeout")
 	_ = c.Bool("json")
-	runFlag := c.String("run")
-
-	if mode == "process" {
-		return cli.Exit("Error: process target not yet implemented", exitRuntimeError)
-	}
-
-	var runSections []string
-	if runFlag != "" {
-		runSections = strings.Split(runFlag, ",")
-		for i, s := range runSections {
-			runSections[i] = strings.TrimSpace(s)
-		}
-	}
 
 	testFiles, err := smokepod.FindTestFiles(testsPath)
 	if err != nil {
@@ -424,7 +411,31 @@ func verifyAction(c *cli.Context) error {
 		cancel()
 	}()
 
-	targetExec := smokepod.NewLocalTarget(target, nil)
+	var targetExec smokepod.Target
+	if mode == "process" {
+		procTarget, err := smokepod.NewProcessTarget(ctx, target)
+		if err != nil {
+			return cli.Exit(fmt.Sprintf("Error creating process target: %v", err), exitRuntimeError)
+		}
+		defer func() { _ = procTarget.Close() }()
+		targetExec = procTarget
+	} else {
+		targetExec = smokepod.NewLocalTarget(target, nil)
+	}
+
+	return runVerify(c, ctx, targetExec, testFiles, testsPath, fixturesPath, failFast)
+}
+
+func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, testFiles []string, testsPath, fixturesPath string, failFast bool) error {
+	runFlag := c.String("run")
+
+	var runSections []string
+	if runFlag != "" {
+		runSections = strings.Split(runFlag, ",")
+		for i, s := range runSections {
+			runSections[i] = strings.TrimSpace(s)
+		}
+	}
 
 	reporter := smokepod.NewVerifyReporter(os.Stderr)
 
