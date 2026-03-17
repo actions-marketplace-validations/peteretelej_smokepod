@@ -1,6 +1,17 @@
 package smokepod
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+var (
+	ErrCIGuard         = errors.New("record called in CI without --update")
+	ErrFixtureExists   = errors.New("fixture file already exists")
+	ErrFixtureNotFound = errors.New("fixture file missing for verify")
+	ErrProcessCrash    = errors.New("process died")
+	ErrMalformedJSON   = errors.New("invalid JSON received")
+)
 
 // ConfigError represents a configuration validation error.
 type ConfigError struct {

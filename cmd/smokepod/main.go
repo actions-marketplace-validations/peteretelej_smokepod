@@ -7,18 +7,21 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
+	"github.com/peteretelej/smokepod/internal/testfile"
 	"github.com/peteretelej/smokepod/pkg/smokepod"
 	"github.com/urfave/cli/v2"
 )
 
 // Exit codes
 const (
-	exitSuccess       = 0
-	exitTestFailure   = 1
-	exitConfigError   = 2
-	exitRuntimeError  = 3
+	exitSuccess      = 0
+	exitTestFailure  = 1
+	exitConfigError  = 2
+	exitRuntimeError = 3
 )
 
 func main() {
@@ -29,6 +32,7 @@ func main() {
 		Commands: []*cli.Command{
 			runCommand(),
 			validateCommand(),
+			recordCommand(),
 		},
 	}
 
@@ -75,6 +79,44 @@ func validateCommand() *cli.Command {
 		Usage:     "Validate config without running tests",
 		ArgsUsage: "<config.yaml>",
 		Action:    validateAction,
+	}
+}
+
+func recordCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "record",
+		Usage: "Record command outputs as fixtures",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "target",
+				Usage:    "Shell to use for recording",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "tests",
+				Usage:    "Path to test files",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "fixtures",
+				Usage:    "Output directory for fixtures",
+				Required: true,
+			},
+			&cli.BoolFlag{
+				Name:  "update",
+				Usage: "Overwrite existing fixtures",
+			},
+			&cli.DurationFlag{
+				Name:  "timeout",
+				Usage: "Command timeout",
+				Value: 30 * time.Second,
+			},
+			&cli.StringFlag{
+				Name:  "run",
+				Usage: "Run specific sections (comma-separated)",
+			},
+		},
+		Action: recordAction,
 	}
 }
 
@@ -178,6 +220,117 @@ func validateAction(c *cli.Context) error {
 	fmt.Fprintf(os.Stderr, "  Tests: %d\n", len(config.Tests))
 	fmt.Fprintf(os.Stderr, "  Timeout: %s\n", config.Settings.Timeout)
 	fmt.Fprintf(os.Stderr, "  Parallel: %v\n", config.Settings.IsParallel())
+	return nil
+}
+
+func recordAction(c *cli.Context) error {
+	target := c.String("target")
+	testsPath := c.String("tests")
+	fixturesPath := c.String("fixtures")
+	update := c.Bool("update")
+	timeout := c.Duration("timeout")
+	runFlag := c.String("run")
+
+	if os.Getenv("CI") != "" && !update {
+		fmt.Fprintln(os.Stderr, "Warning: CI environment detected; use --update to overwrite fixtures")
+		return cli.Exit(fmt.Sprintf("Error: %v", smokepod.ErrCIGuard), exitRuntimeError)
+	}
+
+	var runSections []string
+	if runFlag != "" {
+		runSections = strings.Split(runFlag, ",")
+		for i, s := range runSections {
+			runSections[i] = strings.TrimSpace(s)
+		}
+	}
+
+	testFiles, err := smokepod.FindTestFiles(testsPath)
+	if err != nil {
+		return cli.Exit(fmt.Sprintf("Error finding test files: %v", err), exitConfigError)
+	}
+
+	if len(testFiles) == 0 {
+		fmt.Fprintf(os.Stderr, "No .test files found in %s\n", testsPath)
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Duration(len(testFiles)))
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	targetExec := smokepod.NewLocalTarget(target, nil)
+	platform := smokepod.DetectPlatform(ctx, targetExec)
+
+	recorded := 0
+	skipped := 0
+
+	for _, testFile := range testFiles {
+		fixturePath := smokepod.FixturePathFromTest(testFile, testsPath, fixturesPath)
+
+		if !update {
+			if _, err := os.Stat(fixturePath); err == nil {
+				fmt.Fprintf(os.Stderr, "Skipping %s (fixture exists, use --update to overwrite)\n", testFile)
+				skipped++
+				continue
+			}
+		}
+
+		tf, err := testfile.Parse(testFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", testFile, err)
+			continue
+		}
+
+		sections, err := tf.GetSections(runSections)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting sections from %s: %v\n", testFile, err)
+			continue
+		}
+
+		fixture := &smokepod.FixtureFile{
+			Source:       testFile,
+			RecordedWith: target,
+			RecordedAt:   time.Now(),
+			Platform:     platform,
+			Sections:     make(map[string][]smokepod.FixtureCommand),
+		}
+
+		for _, section := range sections {
+			var commands []smokepod.FixtureCommand
+			for _, cmd := range section.Commands {
+				result, err := targetExec.Exec(ctx, cmd.Cmd)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error executing command in %s: %v\n", testFile, err)
+					continue
+				}
+
+				commands = append(commands, smokepod.FixtureCommand{
+					Line:     cmd.Line,
+					Command:  cmd.Cmd,
+					Stdout:   result.Stdout,
+					Stderr:   result.Stderr,
+					ExitCode: result.ExitCode,
+				})
+			}
+			fixture.Sections[section.Name] = commands
+		}
+
+		if err := smokepod.WriteFixture(fixturePath, fixture); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing fixture %s: %v\n", fixturePath, err)
+			continue
+		}
+
+		fmt.Fprintf(os.Stderr, "Recorded %s -> %s\n", testFile, fixturePath)
+		recorded++
+	}
+
+	fmt.Fprintf(os.Stderr, "\nSummary: %d recorded, %d skipped\n", recorded, skipped)
 	return nil
 }
 
