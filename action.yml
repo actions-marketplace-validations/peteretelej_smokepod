@@ -104,10 +104,12 @@ runs:
         fi
 
         chmod +x smokepod${EXT}
-        sudo mv smokepod${EXT} /usr/local/bin/smokepod${EXT}
+        mkdir -p "${RUNNER_TOOL_CACHE:-/usr/local/bin}"
+        mv smokepod${EXT} "${RUNNER_TOOL_CACHE:-/usr/local/bin}/smokepod${EXT}"
+        echo "${RUNNER_TOOL_CACHE:-/usr/local/bin}" >> "$GITHUB_PATH"
         rm -f checksums.txt
 
-        smokepod${EXT} --version
+        smokepod --version
 
     - name: Run smokepod
       shell: bash
