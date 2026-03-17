@@ -6,16 +6,14 @@
 
 Comparison test runner for CLI tools. Record expected outputs, verify against fixtures, and run containerized smoke tests.
 
-## Features
-
 - **Record/verify** workflow for CLI comparison testing
 - **Process target** for testing via JSONL protocol
-- Run tests in Docker containers for isolation
-- CLI tests in standalone `.test` files with multi-line commands and stderr matching
+- Docker container isolation
+- Standalone `.test` files with multi-line commands and stderr matching
 - Playwright browser test support
 - JSON output for CI integration
 - GitHub Action for easy CI integration
-- Usable as CLI tool or Go library
+- CLI tool or Go library
 
 ## Installation
 
@@ -186,7 +184,7 @@ $ failing command
 
 ## Requirements
 
-- Docker
+- Docker (for `run` mode with containerized tests)
 
 ## Documentation
 
