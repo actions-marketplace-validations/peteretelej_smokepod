@@ -12,12 +12,12 @@ import (
 
 // CLIRunner executes CLI tests in a container.
 type CLIRunner struct {
-	container ContainerExecutor
+	target Target
 }
 
 // NewCLIRunner creates a new CLI test runner.
-func NewCLIRunner(container ContainerExecutor) *CLIRunner {
-	return &CLIRunner{container: container}
+func NewCLIRunner(target Target) *CLIRunner {
+	return &CLIRunner{target: target}
 }
 
 // Run executes all commands in a section and returns results.
@@ -52,8 +52,7 @@ func (r *CLIRunner) runCommand(ctx context.Context, cmd testfile.Command) Comman
 	}
 	result.Expected = strings.Join(expectedLines, "\n")
 
-	// Execute command in container
-	execResult, err := r.container.Exec(ctx, []string{"sh", "-c", cmd.Cmd})
+	execResult, err := r.target.Exec(ctx, cmd.Cmd)
 	if err != nil {
 		result.Passed = false
 		result.Error = fmt.Sprintf("execution error: %v", err)

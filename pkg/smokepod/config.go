@@ -33,13 +33,15 @@ func (s Settings) IsParallel() bool {
 
 // TestDefinition represents a single test configuration.
 type TestDefinition struct {
-	Name  string   `yaml:"name"`
-	Type  string   `yaml:"type"`  // "cli" or "playwright"
-	Image string   `yaml:"image"`
-	File  string   `yaml:"file"` // for cli tests
-	Run   []string `yaml:"run"`  // specific sections to run
-	Path  string   `yaml:"path"` // for playwright tests
-	Args  []string `yaml:"args"` // for playwright tests
+	Name   string   `yaml:"name"`
+	Type   string   `yaml:"type"`  // "cli" or "playwright"
+	Image  string   `yaml:"image"` // mutually exclusive with Target
+	Target string   `yaml:"target"`
+	Mode   string   `yaml:"mode"` // "shell" (default) or "process"
+	File   string   `yaml:"file"` // for cli tests
+	Run    []string `yaml:"run"`  // specific sections to run
+	Path   string   `yaml:"path"` // for playwright tests
+	Args   []string `yaml:"args"` // for playwright tests
 }
 
 // ParseConfig loads and validates a configuration file.
@@ -116,16 +118,26 @@ func validateTest(test TestDefinition, index int) error {
 		return fmt.Errorf("%s: type must be \"cli\" or \"playwright\", got %q", prefix, test.Type)
 	}
 
-	if test.Image == "" && test.Type == "cli" {
-		return fmt.Errorf("%s: image is required for cli tests", prefix)
+	if test.Image != "" && test.Target != "" {
+		return fmt.Errorf("%s: image and target are mutually exclusive", prefix)
 	}
 
-	if test.Type == "cli" && test.File == "" {
-		return fmt.Errorf("%s: file is required for cli tests", prefix)
+	if test.Type == "cli" {
+		if test.Image == "" && test.Target == "" {
+			return fmt.Errorf("%s: image or target is required for cli tests", prefix)
+		}
+		if test.File == "" {
+			return fmt.Errorf("%s: file is required for cli tests", prefix)
+		}
 	}
 
-	if test.Type == "playwright" && test.Path == "" {
-		return fmt.Errorf("%s: path is required for playwright tests", prefix)
+	if test.Type == "playwright" {
+		if test.Target != "" {
+			return fmt.Errorf("%s: target is not supported for playwright tests (use image)", prefix)
+		}
+		if test.Path == "" {
+			return fmt.Errorf("%s: path is required for playwright tests", prefix)
+		}
 	}
 
 	return nil

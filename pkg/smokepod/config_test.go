@@ -153,3 +153,91 @@ func TestParseConfig_PlaywrightDefaultImage(t *testing.T) {
 		t.Errorf("image = %q, want %q", pw.Image, DefaultPlaywrightImage)
 	}
 }
+
+func TestParseConfig_CLIWithTarget(t *testing.T) {
+	cfg, err := ParseConfig(testdataPath("cli-with-target.yaml"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(cfg.Tests) != 1 {
+		t.Fatalf("len(tests) = %d, want 1", len(cfg.Tests))
+	}
+
+	test := cfg.Tests[0]
+	if test.Target != "/bin/bash" {
+		t.Errorf("target = %q, want %q", test.Target, "/bin/bash")
+	}
+	if test.Image != "" {
+		t.Errorf("image = %q, want empty", test.Image)
+	}
+}
+
+func TestParseConfig_ImageAndTargetMutuallyExclusive(t *testing.T) {
+	cfg := &Config{
+		Name:    "test",
+		Version: "1",
+		Tests: []TestDefinition{
+			{
+				Name:   "test",
+				Type:   "cli",
+				Image:  "alpine",
+				Target: "/bin/bash",
+				File:   "test.test",
+			},
+		},
+	}
+
+	err := validateConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error = %q, want to contain %q", err.Error(), "mutually exclusive")
+	}
+}
+
+func TestParseConfig_CLINeitherImageNorTarget(t *testing.T) {
+	cfg := &Config{
+		Name:    "test",
+		Version: "1",
+		Tests: []TestDefinition{
+			{
+				Name: "test",
+				Type: "cli",
+				File: "test.test",
+			},
+		},
+	}
+
+	err := validateConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "image or target is required") {
+		t.Errorf("error = %q, want to contain %q", err.Error(), "image or target is required")
+	}
+}
+
+func TestParseConfig_PlaywrightWithTarget(t *testing.T) {
+	cfg := &Config{
+		Name:    "test",
+		Version: "1",
+		Tests: []TestDefinition{
+			{
+				Name:   "test",
+				Type:   "playwright",
+				Target: "/bin/bash",
+				Path:   "tests/e2e",
+			},
+		},
+	}
+
+	err := validateConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "target is not supported for playwright") {
+		t.Errorf("error = %q, want to contain %q", err.Error(), "target is not supported for playwright")
+	}
+}

@@ -11,24 +11,6 @@ import (
 	"github.com/peteretelej/smokepod/pkg/smokepod/runners"
 )
 
-// containerAdapter adapts smokepod.Container to runners.ContainerExecutor.
-type containerAdapter struct {
-	c *Container
-}
-
-func (a *containerAdapter) Exec(ctx context.Context, cmd []string) (runners.ExecResult, error) {
-	result, err := a.c.Exec(ctx, cmd)
-	if err != nil {
-		return runners.ExecResult{}, err
-	}
-	return runners.ExecResult{
-		ExitCode: result.ExitCode,
-		Stdout:   result.Stdout,
-		Stderr:   result.Stderr,
-	}, nil
-}
-
-// convertSectionResult converts runners.SectionResult to smokepod.SectionResult.
 func convertSectionResult(r *runners.SectionResult) SectionResult {
 	commands := make([]CommandResult, len(r.Commands))
 	for i, cmd := range r.Commands {
@@ -222,7 +204,6 @@ func (e *Executor) runTest(ctx context.Context, test TestDefinition) TestResult 
 }
 
 func (e *Executor) runCLITest(ctx context.Context, test TestDefinition, result *TestResult) {
-	// Parse test file
 	testPath := e.resolvePath(test.File)
 	tf, err := testfile.Parse(testPath)
 	if err != nil {
@@ -230,25 +211,20 @@ func (e *Executor) runCLITest(ctx context.Context, test TestDefinition, result *
 		return
 	}
 
-	// Get sections to run
 	sections, err := tf.GetSections(test.Run)
 	if err != nil {
 		result.Error = err.Error()
 		return
 	}
 
-	// Create container
-	container, err := NewContainer(ctx, ContainerConfig{
-		Image: test.Image,
-	})
+	target, err := e.createTarget(ctx, test)
 	if err != nil {
-		result.Error = fmt.Sprintf("creating container: %v", err)
+		result.Error = err.Error()
 		return
 	}
-	defer func() { _ = container.Terminate(context.Background()) }()
+	defer func() { _ = target.Close() }()
 
-	// Run tests
-	runner := runners.NewCLIRunner(&containerAdapter{container})
+	runner := runners.NewCLIRunner(target)
 	result.Passed = true
 
 	for _, section := range sections {
@@ -267,7 +243,6 @@ func (e *Executor) runCLITest(ctx context.Context, test TestDefinition, result *
 }
 
 func (e *Executor) runPlaywrightTest(ctx context.Context, test TestDefinition, result *TestResult) {
-	// Resolve project path
 	projectPath := e.resolvePath(test.Path)
 	absPath, err := filepath.Abs(projectPath)
 	if err != nil {
@@ -275,14 +250,13 @@ func (e *Executor) runPlaywrightTest(ctx context.Context, test TestDefinition, r
 		return
 	}
 
-	// Create container with project mounted
 	container, err := NewContainer(ctx, ContainerConfig{
 		Image: test.Image,
 		Mounts: []Mount{
 			{Source: absPath, Target: "/app"},
 		},
 		Env: map[string]string{
-			"CI": "true", // Playwright uses this for CI mode
+			"CI": "true",
 		},
 	})
 	if err != nil {
@@ -291,18 +265,16 @@ func (e *Executor) runPlaywrightTest(ctx context.Context, test TestDefinition, r
 	}
 	defer func() { _ = container.Terminate(context.Background()) }()
 
-	// Install dependencies
 	if _, err := container.Exec(ctx, []string{"sh", "-c", "cd /app && npm ci"}); err != nil {
 		result.Error = fmt.Sprintf("installing dependencies: %v", err)
 		return
 	}
 
-	// Run Playwright
-	runner := runners.NewPlaywrightRunner(&containerAdapter{container})
+	target := NewDockerTarget(container)
+	runner := runners.NewPlaywrightRunner(target)
 	pwResult, err := runner.Run(ctx, test.Args)
 	if err != nil {
 		result.Error = fmt.Sprintf("running playwright: %v", err)
-		// Still set passed based on result if we got one
 		if pwResult != nil {
 			result.Passed = pwResult.Passed
 		}
@@ -310,6 +282,27 @@ func (e *Executor) runPlaywrightTest(ctx context.Context, test TestDefinition, r
 	}
 
 	result.Passed = pwResult.Passed
+}
+
+func (e *Executor) createTarget(ctx context.Context, test TestDefinition) (Target, error) {
+	if test.Image != "" {
+		container, err := NewContainer(ctx, ContainerConfig{
+			Image: test.Image,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("creating container: %w", err)
+		}
+		return NewDockerTarget(container), nil
+	}
+
+	if test.Target != "" {
+		if test.Mode == "process" {
+			return nil, fmt.Errorf("process mode not yet implemented (Phase 4)")
+		}
+		return NewLocalTarget(test.Target, nil), nil
+	}
+
+	return nil, fmt.Errorf("test must specify image or target")
 }
 
 func (e *Executor) resolvePath(path string) string {

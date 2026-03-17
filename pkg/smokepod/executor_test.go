@@ -238,3 +238,47 @@ func TestExecutor_GlobalTimeout(t *testing.T) {
 		t.Errorf("Passed = false, want true (no tests)")
 	}
 }
+
+func TestExecutor_CreateTarget_Local(t *testing.T) {
+	cfg := &Config{
+		Name:    "test",
+		Version: "1",
+		Tests: []TestDefinition{
+			{Name: "test", Type: "cli", Target: "/bin/sh", File: "test.test"},
+		},
+	}
+
+	e := NewExecutor(cfg)
+
+	target, err := e.createTarget(context.Background(), cfg.Tests[0])
+	if err != nil {
+		t.Fatalf("createTarget failed: %v", err)
+	}
+	defer func() { _ = target.Close() }()
+
+	if target == nil {
+		t.Error("target is nil")
+	}
+
+	// Verify it's a LocalTarget
+	if _, ok := target.(*LocalTarget); !ok {
+		t.Error("target is not a LocalTarget")
+	}
+}
+
+func TestExecutor_CreateTarget_ProcessModeNotImplemented(t *testing.T) {
+	cfg := &Config{
+		Name:    "test",
+		Version: "1",
+		Tests: []TestDefinition{
+			{Name: "test", Type: "cli", Target: "/bin/sh", Mode: "process", File: "test.test"},
+		},
+	}
+
+	e := NewExecutor(cfg)
+
+	_, err := e.createTarget(context.Background(), cfg.Tests[0])
+	if err == nil {
+		t.Fatal("expected error for process mode, got nil")
+	}
+}

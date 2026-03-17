@@ -1,0 +1,7 @@
+name: target-test
+version: "1"
+tests:
+  - name: local-test
+    type: cli
+    target: /bin/bash
+    file: tests/test.test

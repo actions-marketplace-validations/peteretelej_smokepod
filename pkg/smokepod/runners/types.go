@@ -2,16 +2,15 @@ package runners
 
 import "context"
 
-// ContainerExecutor can execute commands in a container.
-type ContainerExecutor interface {
-	Exec(ctx context.Context, cmd []string) (ExecResult, error)
+type Target interface {
+	Exec(ctx context.Context, command string) (ExecResult, error)
+	Close() error
 }
 
-// ExecResult holds the result of a command execution.
 type ExecResult struct {
-	ExitCode int
 	Stdout   string
 	Stderr   string
+	ExitCode int
 }
 
 // SectionResult contains results for a test file section.

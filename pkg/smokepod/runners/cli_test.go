@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 }
 
 // testContainer wraps a real Docker container for testing.
-// It implements ContainerExecutor.
+// It implements Target.
 type testContainer struct {
 	id        string
 	ctx       context.Context
@@ -53,8 +53,8 @@ func setupTestContainer(t *testing.T) (*testContainer, context.Context, context.
 	return tc, ctx, cancel
 }
 
-func (tc *testContainer) Exec(ctx context.Context, cmd []string) (ExecResult, error) {
-	args := append([]string{"exec", tc.id}, cmd...)
+func (tc *testContainer) Exec(ctx context.Context, command string) (ExecResult, error) {
+	args := []string{"exec", tc.id, "sh", "-c", command}
 	c := exec.CommandContext(ctx, "docker", args...)
 	output, err := c.CombinedOutput()
 
@@ -74,10 +74,14 @@ func (tc *testContainer) Exec(ctx context.Context, cmd []string) (ExecResult, er
 	}, nil
 }
 
+func (tc *testContainer) Close() error {
+	return tc.terminate()
+}
+
 func TestCLIRunner_ExactMatch(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -113,7 +117,7 @@ func TestCLIRunner_ExactMatch(t *testing.T) {
 func TestCLIRunner_ExactMismatch(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -149,7 +153,7 @@ func TestCLIRunner_ExactMismatch(t *testing.T) {
 func TestCLIRunner_RegexMatch(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -179,7 +183,7 @@ func TestCLIRunner_RegexMatch(t *testing.T) {
 func TestCLIRunner_RegexMismatch(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -212,7 +216,7 @@ func TestCLIRunner_RegexMismatch(t *testing.T) {
 func TestCLIRunner_ExitCodePass(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -239,7 +243,7 @@ func TestCLIRunner_ExitCodePass(t *testing.T) {
 func TestCLIRunner_ExitCodeFail(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -269,7 +273,7 @@ func TestCLIRunner_ExitCodeFail(t *testing.T) {
 func TestCLIRunner_MultipleCommands(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -323,7 +327,7 @@ func TestCLIRunner_MultipleCommands(t *testing.T) {
 func TestCLIRunner_MultilineOutput(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -355,7 +359,7 @@ func TestCLIRunner_MultilineOutput(t *testing.T) {
 func TestCLIRunner_LineMismatchCount(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -388,7 +392,7 @@ func TestCLIRunner_LineMismatchCount(t *testing.T) {
 func TestCLIRunner_NoExpectedOutput(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{
@@ -415,7 +419,7 @@ func TestCLIRunner_NoExpectedOutput(t *testing.T) {
 func TestCLIRunner_SectionName(t *testing.T) {
 	c, ctx, cancel := setupTestContainer(t)
 	defer cancel()
-	defer func() { _ = c.terminate() }()
+	defer func() { _ = c.Close() }()
 
 	runner := NewCLIRunner(c)
 	section := &testfile.Section{

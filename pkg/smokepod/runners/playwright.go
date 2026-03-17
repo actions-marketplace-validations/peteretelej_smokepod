@@ -4,17 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
 // PlaywrightRunner executes Playwright tests in a container.
 type PlaywrightRunner struct {
-	container ContainerExecutor
+	target Target
 }
 
 // NewPlaywrightRunner creates a new Playwright test runner.
-func NewPlaywrightRunner(container ContainerExecutor) *PlaywrightRunner {
-	return &PlaywrightRunner{container: container}
+func NewPlaywrightRunner(target Target) *PlaywrightRunner {
+	return &PlaywrightRunner{target: target}
 }
 
 // PlaywrightResult contains the parsed results from a Playwright run.
@@ -45,12 +46,12 @@ type SpecResult struct {
 
 // Run executes Playwright tests and returns the results.
 func (r *PlaywrightRunner) Run(ctx context.Context, args []string) (*PlaywrightResult, error) {
-	// Build command: npx playwright test --reporter=json
-	cmd := []string{"npx", "playwright", "test", "--reporter=json"}
-	cmd = append(cmd, args...)
+	cmd := "npx playwright test --reporter=json"
+	if len(args) > 0 {
+		cmd += " " + strings.Join(args, " ")
+	}
 
-	// Execute in container
-	execResult, err := r.container.Exec(ctx, cmd)
+	execResult, err := r.target.Exec(ctx, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("executing playwright: %w", err)
 	}
@@ -139,4 +140,3 @@ func extractSuites(suites []PlaywrightSuite) []SuiteResult {
 
 	return results
 }
-
