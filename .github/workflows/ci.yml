@@ -70,39 +70,35 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build smokepod
+      - name: Build and install smokepod to PATH
         shell: bash
         run: |
           ext=""
           case "$(uname -s)" in
             MINGW*|MSYS*|CYGWIN*) ext=".exe" ;;
           esac
-          go build -o "smokepod-local${ext}" ./cmd/smokepod
+          go build -o "smokepod${ext}" ./cmd/smokepod
+          mkdir -p "$HOME/.local/bin"
+          mv "smokepod${ext}" "$HOME/.local/bin/smokepod${ext}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Record fixture
-        shell: bash
-        run: |
-          ext=""
-          case "$(uname -s)" in
-            MINGW*|MSYS*|CYGWIN*) ext=".exe" ;;
-          esac
-          mkdir -p testdata/action-fixtures
-          "./smokepod-local${ext}" record \
-            --target "$(command -v bash)" \
-            --tests testdata/fixtures/simple.test \
-            --fixtures testdata/action-fixtures/ \
-            --update
+      - name: Record fixture via action
+        uses: ./
+        with:
+          install: 'false'
+          mode: record
+          target: ${{ runner.os == 'Windows' && 'cmd.exe' || '/bin/sh' }}
+          tests: testdata/fixtures/simple.test
+          fixtures: testdata/action-fixtures/
 
-      - name: Verify with target-args
-        shell: bash
-        run: |
-          ext=""
-          case "$(uname -s)" in
-            MINGW*|MSYS*|CYGWIN*) ext=".exe" ;;
-          esac
-          "./smokepod-local${ext}" verify \
-            --target "$(command -v bash)" \
-            --tests testdata/fixtures/simple.test \
-            --fixtures testdata/action-fixtures/ \
-            --target-arg "--arg1" \
-            --target-arg "path with spaces/fixture"
+      - name: Verify with target-args via action
+        uses: ./
+        with:
+          install: 'false'
+          mode: verify
+          target: ${{ runner.os == 'Windows' && 'cmd.exe' || '/bin/sh' }}
+          target-args: |
+            --arg1
+            path with spaces/fixture
+          tests: testdata/fixtures/simple.test
+          fixtures: testdata/action-fixtures/

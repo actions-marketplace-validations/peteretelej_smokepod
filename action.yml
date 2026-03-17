@@ -39,6 +39,9 @@ inputs:
   json:
     description: 'Output results as JSON'
     default: 'false'
+  install:
+    description: 'Whether to download and install smokepod (set to false if already on PATH)'
+    default: 'true'
   version:
     description: 'Smokepod version to install'
     default: 'latest'
@@ -47,6 +50,7 @@ runs:
   using: 'composite'
   steps:
     - name: Install smokepod
+      if: ${{ inputs.install != 'false' }}
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}

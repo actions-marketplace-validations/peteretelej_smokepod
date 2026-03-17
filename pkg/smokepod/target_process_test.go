@@ -22,6 +22,15 @@ func TestHelperProcess(t *testing.T) {
 
 	mode := os.Getenv("SMOKEPOD_TEST_MODE")
 	switch mode {
+	case "echo_args":
+		// Echo our raw os.Args as JSON, proving how we were launched
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			resp := processResponse{Stdout: fmt.Sprintf("%v", os.Args)}
+			data, _ := json.Marshal(resp)
+			fmt.Println(string(data))
+		}
+		os.Exit(0)
 	case "crash":
 		fmt.Fprintln(os.Stderr, "helper: crashing on startup")
 		os.Exit(1)
@@ -322,7 +331,7 @@ func TestProcessTarget_StderrBuffering(t *testing.T) {
 
 func TestStderrTailBuffer_Basic(t *testing.T) {
 	buf := newStderrTailBuffer(16)
-	buf.Write([]byte("hello"))
+	_, _ = buf.Write([]byte("hello"))
 	if got := buf.String(); got != "hello" {
 		t.Errorf("String() = %q, want %q", got, "hello")
 	}
@@ -330,7 +339,7 @@ func TestStderrTailBuffer_Basic(t *testing.T) {
 
 func TestStderrTailBuffer_Overflow(t *testing.T) {
 	buf := newStderrTailBuffer(8)
-	buf.Write([]byte("abcdefghijklmnop")) // 16 bytes into 8-byte buffer
+	_, _ = buf.Write([]byte("abcdefghijklmnop")) // 16 bytes into 8-byte buffer
 	got := buf.String()
 	if got != "ijklmnop" {
 		t.Errorf("String() = %q, want %q", got, "ijklmnop")
@@ -339,11 +348,46 @@ func TestStderrTailBuffer_Overflow(t *testing.T) {
 
 func TestStderrTailBuffer_IncrementalOverflow(t *testing.T) {
 	buf := newStderrTailBuffer(8)
-	buf.Write([]byte("abcd"))
-	buf.Write([]byte("efgh"))
-	buf.Write([]byte("ij"))
+	_, _ = buf.Write([]byte("abcd"))
+	_, _ = buf.Write([]byte("efgh"))
+	_, _ = buf.Write([]byte("ij"))
 	got := buf.String()
 	if got != "cdefghij" {
 		t.Errorf("String() = %q, want %q", got, "cdefghij")
+	}
+}
+
+func TestProcessTarget_NoShellWrapping(t *testing.T) {
+	// Regression test: verify that NewProcessTarget launches the binary
+	// directly and does NOT wrap it with "sh -c". The echo_args mode
+	// returns os.Args so we can inspect how the process was invoked.
+	path, args := helperCommand()
+	env := helperEnv("echo_args")
+
+	for _, e := range env {
+		parts := strings.SplitN(e, "=", 2)
+		t.Setenv(parts[0], parts[1])
+	}
+
+	ctx := context.Background()
+	target, err := NewProcessTarget(ctx, path, args...)
+	if err != nil {
+		t.Fatalf("NewProcessTarget failed: %v", err)
+	}
+	defer func() { _ = target.Close() }()
+
+	result, err := target.Exec(context.Background(), "echo hello")
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	// If sh -c wrapping were present, os.Args[0] would be "sh" or "/bin/sh"
+	// and os.Args would contain [sh, -c, <original command>].
+	// With direct exec, os.Args[0] is the test binary itself.
+	if strings.Contains(result.Stdout, "sh -c") {
+		t.Errorf("process appears to be launched via sh -c: %s", result.Stdout)
+	}
+	if strings.Contains(result.Stdout, "/bin/sh") {
+		t.Errorf("process appears to be launched via /bin/sh: %s", result.Stdout)
 	}
 }
