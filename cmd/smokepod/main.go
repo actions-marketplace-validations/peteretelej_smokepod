@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -276,7 +277,7 @@ func recordAction(c *cli.Context) error {
 	testsPath := c.String("tests")
 	fixturesPath := c.String("fixtures")
 	update := c.Bool("update")
-	_ = c.Duration("timeout")
+	timeout := c.Duration("timeout")
 	runFlag := c.String("run")
 
 	if os.Getenv("CI") != "" && !update {
@@ -304,6 +305,12 @@ func recordAction(c *cli.Context) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	if timeout > 0 {
+		var timeoutCancel context.CancelFunc
+		ctx, timeoutCancel = context.WithTimeout(ctx, timeout)
+		defer timeoutCancel()
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -388,8 +395,8 @@ func verifyAction(c *cli.Context) error {
 	fixturesPath := c.String("fixtures")
 	mode := c.String("mode")
 	failFast := c.Bool("fail-fast")
-	_ = c.Duration("timeout")
-	_ = c.Bool("json")
+	timeout := c.Duration("timeout")
+	jsonOutput := c.Bool("json")
 
 	testFiles, err := smokepod.FindTestFiles(testsPath)
 	if err != nil {
@@ -403,6 +410,12 @@ func verifyAction(c *cli.Context) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	if timeout > 0 {
+		var timeoutCancel context.CancelFunc
+		ctx, timeoutCancel = context.WithTimeout(ctx, timeout)
+		defer timeoutCancel()
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -423,10 +436,10 @@ func verifyAction(c *cli.Context) error {
 		targetExec = smokepod.NewLocalTarget(target, nil)
 	}
 
-	return runVerify(c, ctx, targetExec, testFiles, testsPath, fixturesPath, failFast)
+	return runVerify(c, ctx, targetExec, testFiles, testsPath, fixturesPath, failFast, jsonOutput)
 }
 
-func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, testFiles []string, testsPath, fixturesPath string, failFast bool) error {
+func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, testFiles []string, testsPath, fixturesPath string, failFast bool, jsonOutput bool) error {
 	runFlag := c.String("run")
 
 	var runSections []string
@@ -556,6 +569,24 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 	}
 
 	reporter.ReportSummary(totalPassed, totalFailed, totalCommands)
+
+	if jsonOutput {
+		result := &smokepod.Result{
+			Name:      "verify",
+			Timestamp: time.Now(),
+			Passed:    totalFailed == 0,
+			Summary: smokepod.Summary{
+				Total:  totalCommands,
+				Passed: totalPassed,
+				Failed: totalFailed,
+			},
+		}
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return cli.Exit(fmt.Sprintf("Error marshaling JSON: %v", err), exitRuntimeError)
+		}
+		fmt.Println(string(data))
+	}
 
 	if totalFailed > 0 {
 		return cli.Exit("", exitTestFailure)

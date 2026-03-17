@@ -55,3 +55,24 @@ func (t *LocalTarget) Exec(ctx context.Context, command string) (runners.ExecRes
 func (t *LocalTarget) Close() error {
 	return nil
 }
+
+func (t *LocalTarget) GetVersion(ctx context.Context) string {
+	cmd := exec.CommandContext(ctx, t.shell, "--version")
+	var stdout strings.Builder
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+
+	output := strings.TrimSpace(stdout.String())
+	if output == "" {
+		return ""
+	}
+
+	firstLine := strings.Split(output, "\n")[0]
+	if len(firstLine) > 100 {
+		firstLine = firstLine[:100]
+	}
+	return firstLine
+}

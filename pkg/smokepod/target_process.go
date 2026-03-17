@@ -57,12 +57,29 @@ func NewProcessTarget(ctx context.Context, command string) (*ProcessTarget, erro
 	scanner := bufio.NewScanner(stdoutPipe)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
-	return &ProcessTarget{
+	pt := &ProcessTarget{
 		cmd:    cmd,
 		stdin:  stdin,
 		stdout: scanner,
 		stderr: stderrPipe,
-	}, nil
+	}
+
+	go pt.drainStderr()
+
+	return pt, nil
+}
+
+func (p *ProcessTarget) drainStderr() {
+	buf := make([]byte, 4096)
+	for {
+		n, err := p.stderr.Read(buf)
+		if n > 0 {
+			_ = n
+		}
+		if err != nil {
+			break
+		}
+	}
 }
 
 func (p *ProcessTarget) Exec(ctx context.Context, command string) (runners.ExecResult, error) {
