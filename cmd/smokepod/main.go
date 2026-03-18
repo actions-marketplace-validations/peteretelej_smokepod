@@ -90,9 +90,8 @@ func recordCommand() *cli.Command {
 		Usage: "Record command outputs as fixtures",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "target",
-				Usage:    "Path to the target executable",
-				Required: true,
+				Name:  "target",
+				Usage: "Path to the target executable",
 			},
 			&cli.StringSliceFlag{
 				Name:  "target-arg",
@@ -118,6 +117,11 @@ func recordCommand() *cli.Command {
 				Value: 30 * time.Second,
 			},
 			&cli.StringFlag{
+				Name:  "mode",
+				Usage: "Target mode: shell (default) or process",
+				Value: "shell",
+			},
+			&cli.StringFlag{
 				Name:  "run",
 				Usage: "Run specific sections (comma-separated)",
 			},
@@ -136,9 +140,8 @@ func verifyCommand() *cli.Command {
 		Usage: "Verify command outputs against fixtures",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "target",
-				Usage:    "Path to the target executable",
-				Required: true,
+				Name:  "target",
+				Usage: "Path to the target executable",
 			},
 			&cli.StringSliceFlag{
 				Name:  "target-arg",
@@ -289,12 +292,13 @@ func validateAction(c *cli.Context) error {
 }
 
 func recordAction(c *cli.Context) error {
-	target := c.String("target")
-	targetArgs := c.StringSlice("target-arg")
+	cliTarget := c.String("target")
+	cliTargetArgs := c.StringSlice("target-arg")
 	testsPath := c.String("tests")
 	fixturesPath := c.String("fixtures")
 	update := c.Bool("update")
 	timeout := c.Duration("timeout")
+	cliMode := c.String("mode")
 	runFlag := c.String("run")
 	allowEmpty := c.Bool("allow-empty")
 
@@ -339,9 +343,6 @@ func recordAction(c *cli.Context) error {
 		cancel()
 	}()
 
-	targetExec := smokepod.NewLocalTarget(target, targetArgs, nil)
-	platform := smokepod.DetectPlatform(ctx, targetExec)
-
 	recorded := 0
 	skipped := 0
 
@@ -362,18 +363,40 @@ func recordAction(c *cli.Context) error {
 			continue
 		}
 
+		resolvedTarget, resolvedArgs, resolvedMode, err := resolveTarget(testFile, tf.Metadata, cliTarget, cliTargetArgs, cliMode)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			continue
+		}
+
+		var targetExec smokepod.Target
+		if resolvedMode == "process" {
+			procTarget, err := smokepod.NewProcessTarget(ctx, resolvedTarget, resolvedArgs...)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error creating process target for %s: %v\n", testFile, err)
+				continue
+			}
+			targetExec = procTarget
+		} else {
+			targetExec = smokepod.NewLocalTarget(resolvedTarget, resolvedArgs, nil)
+		}
+
+		platform := smokepod.DetectPlatform(ctx, targetExec)
+
 		sections, err := tf.GetSections(runSections)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting sections from %s: %v\n", testFile, err)
+			_ = targetExec.Close()
 			continue
 		}
 
 		fixture := &smokepod.FixtureFile{
-			Source:       testFile,
-			RecordedWith: target,
-			RecordedAt:   time.Now(),
-			Platform:     platform,
-			Sections:     make(map[string][]smokepod.FixtureCommand),
+			Source:           testFile,
+			RecordedWith:     resolvedTarget,
+			RecordedWithArgs: resolvedArgs,
+			RecordedAt:       time.Now(),
+			Platform:         platform,
+			Sections:         make(map[string][]smokepod.FixtureCommand),
 		}
 
 		for _, section := range sections {
@@ -396,6 +419,8 @@ func recordAction(c *cli.Context) error {
 			fixture.Sections[section.Name] = commands
 		}
 
+		_ = targetExec.Close()
+
 		if err := smokepod.WriteFixture(fixturePath, fixture); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing fixture %s: %v\n", fixturePath, err)
 			continue
@@ -410,11 +435,11 @@ func recordAction(c *cli.Context) error {
 }
 
 func verifyAction(c *cli.Context) error {
-	target := c.String("target")
-	targetArgs := c.StringSlice("target-arg")
+	cliTarget := c.String("target")
+	cliTargetArgs := c.StringSlice("target-arg")
 	testsPath := c.String("tests")
 	fixturesPath := c.String("fixtures")
-	mode := c.String("mode")
+	cliMode := c.String("mode")
 	failFast := c.Bool("fail-fast")
 	timeout := c.Duration("timeout")
 	jsonOutput := c.Bool("json")
@@ -448,22 +473,10 @@ func verifyAction(c *cli.Context) error {
 		cancel()
 	}()
 
-	var targetExec smokepod.Target
-	if mode == "process" {
-		procTarget, err := smokepod.NewProcessTarget(ctx, target, targetArgs...)
-		if err != nil {
-			return cli.Exit(fmt.Sprintf("Error creating process target: %v", err), exitRuntimeError)
-		}
-		defer func() { _ = procTarget.Close() }()
-		targetExec = procTarget
-	} else {
-		targetExec = smokepod.NewLocalTarget(target, targetArgs, nil)
-	}
-
-	return runVerify(c, ctx, targetExec, testFiles, testsPath, fixturesPath, failFast, jsonOutput)
+	return runVerify(c, ctx, cliTarget, cliTargetArgs, cliMode, testFiles, testsPath, fixturesPath, failFast, jsonOutput)
 }
 
-func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, testFiles []string, testsPath, fixturesPath string, failFast bool, jsonOutput bool) error {
+func runVerify(c *cli.Context, ctx context.Context, cliTarget string, cliTargetArgs []string, cliMode string, testFiles []string, testsPath, fixturesPath string, failFast bool, jsonOutput bool) error {
 	runFlag := c.String("run")
 
 	var runSections []string
@@ -508,6 +521,34 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 			continue
 		}
 
+		resolvedTarget, resolvedArgs, resolvedMode, err := resolveTarget(testFile, tf.Metadata, cliTarget, cliTargetArgs, cliMode)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			sectionsFailed++
+			sectionsTotal++
+			if failFast {
+				break
+			}
+			continue
+		}
+
+		var targetExec smokepod.Target
+		if resolvedMode == "process" {
+			procTarget, err := smokepod.NewProcessTarget(ctx, resolvedTarget, resolvedArgs...)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error creating process target for %s: %v\n", testFile, err)
+				sectionsFailed++
+				sectionsTotal++
+				if failFast {
+					break
+				}
+				continue
+			}
+			targetExec = procTarget
+		} else {
+			targetExec = smokepod.NewLocalTarget(resolvedTarget, resolvedArgs, nil)
+		}
+
 		// Get sections to verify from .test file
 		// When --run is specified, only get sections that exist in the .test file
 		// (missing ones are handled separately below)
@@ -524,6 +565,7 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 				fmt.Fprintf(os.Stderr, "Error getting sections from %s: %v\n", testFile, err)
 				sectionsFailed++
 				sectionsTotal++
+				_ = targetExec.Close()
 				if failFast {
 					break
 				}
@@ -572,6 +614,7 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 			}
 		}
 		if staleFailed && failFast {
+			_ = targetExec.Close()
 			break
 		}
 
@@ -597,6 +640,7 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 				}
 			}
 			if runMissingFailed && failFast {
+				_ = targetExec.Close()
 				break
 			}
 		}
@@ -702,6 +746,8 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 			}
 		}
 
+		_ = targetExec.Close()
+
 		if (sectionsFailed > 0 || sectionsXPass > 0) && failFast {
 			break
 		}
@@ -739,6 +785,43 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 		return cli.Exit("", exitTestFailure)
 	}
 	return nil
+}
+
+func resolveTarget(filename string, metadata map[string][]string, cliTarget string, cliTargetArgs []string, cliMode string) (target string, targetArgs []string, mode string, err error) {
+	// Resolve target
+	if vals, ok := metadata["target"]; ok {
+		if len(vals) > 1 {
+			return "", nil, "", fmt.Errorf("%s: multiple # target directives; only one is allowed", filename)
+		}
+		target = vals[0]
+	} else {
+		target = cliTarget
+	}
+	if target == "" {
+		return "", nil, "", fmt.Errorf("%s: no target; add a # target directive or pass --target", filename)
+	}
+
+	// Resolve target-arg
+	if vals, ok := metadata["target-arg"]; ok {
+		targetArgs = vals
+	} else {
+		targetArgs = cliTargetArgs
+	}
+
+	// Resolve mode
+	if vals, ok := metadata["mode"]; ok {
+		mode = vals[0]
+	} else {
+		mode = cliMode
+	}
+	if mode == "" {
+		mode = "shell"
+	}
+	if mode != "shell" && mode != "process" {
+		return "", nil, "", fmt.Errorf("invalid mode %q, must be shell or process", mode)
+	}
+
+	return target, targetArgs, mode, nil
 }
 
 func configDir(path string) string {

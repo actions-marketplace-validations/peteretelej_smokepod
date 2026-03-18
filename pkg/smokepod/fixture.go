@@ -9,11 +9,12 @@ import (
 )
 
 type FixtureFile struct {
-	Source       string                      `json:"source"`
-	RecordedWith string                      `json:"recorded_with"`
-	RecordedAt   time.Time                   `json:"recorded_at"`
-	Platform     PlatformInfo                `json:"platform"`
-	Sections     map[string][]FixtureCommand `json:"sections"`
+	Source           string                      `json:"source"`
+	RecordedWith     string                      `json:"recorded_with"`
+	RecordedWithArgs []string                    `json:"recorded_with_args,omitempty"`
+	RecordedAt       time.Time                   `json:"recorded_at"`
+	Platform         PlatformInfo                `json:"platform"`
+	Sections         map[string][]FixtureCommand `json:"sections"`
 }
 
 type FixtureCommand struct {
