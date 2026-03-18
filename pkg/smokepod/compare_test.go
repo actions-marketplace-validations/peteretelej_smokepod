@@ -100,3 +100,74 @@ func TestFormatDiff(t *testing.T) {
 		t.Error("Diff should show added line")
 	}
 }
+
+func TestCompareOutput_WhitespaceMismatch(t *testing.T) {
+	expected := "hello \n"
+	actual := "hello\n"
+
+	result := CompareOutput(expected, actual)
+
+	if result.Matched {
+		t.Error("Expected mismatch for trailing space difference")
+	}
+	if !result.WhitespaceDiff {
+		t.Error("Expected WhitespaceDiff=true for trailing space difference")
+	}
+	if !strings.Contains(result.Diff, "\u00B7") {
+		t.Errorf("Expected diff to contain · (space marker), got:\n%s", result.Diff)
+	}
+}
+
+func TestCompareOutput_ContentMismatch_NoWhitespaceFlag(t *testing.T) {
+	expected := "hello\n"
+	actual := "goodbye\n"
+
+	result := CompareOutput(expected, actual)
+
+	if result.Matched {
+		t.Error("Expected mismatch for content difference")
+	}
+	if result.WhitespaceDiff {
+		t.Error("Expected WhitespaceDiff=false for content-only difference")
+	}
+	if strings.Contains(result.Diff, "\u00B7") {
+		t.Errorf("Expected no · marker for content diff, got:\n%s", result.Diff)
+	}
+}
+
+func TestCompareOutput_CarriageReturn(t *testing.T) {
+	expected := "hello\r\n"
+	actual := "hello\n"
+
+	result := CompareOutput(expected, actual)
+
+	if result.Matched {
+		t.Error("Expected mismatch for CR difference")
+	}
+	if !result.WhitespaceDiff {
+		t.Error("Expected WhitespaceDiff=true for CR difference")
+	}
+	if !strings.Contains(result.Diff, "\u00AC") {
+		t.Errorf("Expected diff to contain ¬ (CR marker), got:\n%s", result.Diff)
+	}
+}
+
+func TestCompareOutput_TabVsSpaces(t *testing.T) {
+	expected := "\thello\n"
+	actual := "  hello\n"
+
+	result := CompareOutput(expected, actual)
+
+	if result.Matched {
+		t.Error("Expected mismatch for tab vs spaces")
+	}
+	if !result.WhitespaceDiff {
+		t.Error("Expected WhitespaceDiff=true for tab vs spaces difference")
+	}
+	if !strings.Contains(result.Diff, "\u2192") {
+		t.Errorf("Expected diff to contain → (tab marker), got:\n%s", result.Diff)
+	}
+	if !strings.Contains(result.Diff, "\u00B7") {
+		t.Errorf("Expected diff to contain · (space marker), got:\n%s", result.Diff)
+	}
+}
