@@ -690,22 +690,15 @@ func runVerify(c *cli.Context, ctx context.Context, cliTarget string, cliTargetA
 			// Command-count mismatch detection (bidirectional)
 			testCmdCount := len(section.Commands)
 			fixtureCmdCount := len(fixtureCommands)
+			commandCount := testCmdCount
+			countMismatch := false
 			if testCmdCount != fixtureCmdCount {
-				reporter.ReportFailure(section.Name, fmt.Sprintf(
-					"command count mismatch: .test has %d commands, fixture has %d (fixture: %s)",
-					testCmdCount, fixtureCmdCount, fixturePath,
-				))
-				reporter.ReportSection(section.Name, "fail")
-				sectionsFailed++
-				sectionsTotal++
-				allSectionResults = append(allSectionResults, smokepod.SectionResult{Name: section.Name, Status: "fail"})
-				if failFast {
-					break
-				}
-				continue
+				commandCount = min(testCmdCount, fixtureCmdCount)
+				countMismatch = true
 			}
 
-			for i, cmd := range section.Commands {
+			for i := 0; i < commandCount; i++ {
+				cmd := section.Commands[i]
 				result, err := targetExec.Exec(ctx, cmd.Cmd)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
@@ -737,6 +730,14 @@ func runVerify(c *cli.Context, ctx context.Context, cliTarget string, cliTargetA
 						reporter.ReportFailure(fmt.Sprintf("%s / %s", section.Name, cmd.Cmd), strings.Join(diffParts, "\n"))
 					}
 				}
+			}
+
+			if countMismatch {
+				reporter.ReportFailure(section.Name, fmt.Sprintf(
+					"command count mismatch: .test has %d commands, fixture has %d (fixture: %s)",
+					testCmdCount, fixtureCmdCount, fixturePath,
+				))
+				sectionPassed = false
 			}
 
 			// Determine section status

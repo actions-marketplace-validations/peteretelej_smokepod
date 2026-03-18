@@ -410,3 +410,30 @@ func TestRecord_EmptyDiscovery_AllowEmpty(t *testing.T) {
 		t.Errorf("expected nil error with --allow-empty, got: %v", err)
 	}
 }
+
+func TestVerify_PartialMatchWithMismatch(t *testing.T) {
+	testsDir := t.TempDir()
+	fixturesDir := t.TempDir()
+
+	// .test has 3 commands in section "foo"
+	writeTestFile(t, testsDir, "example.test",
+		"## foo\n$ echo a\na\n\n$ echo b\nb\n\n$ echo c\nc\n")
+
+	// fixture has only 2 commands - the first two match
+	writeFixture(t, fixturesDir, "example.fixture.json", map[string][]smokepod.FixtureCommand{
+		"foo": {
+			{Line: 2, Command: "echo a", Stdout: "a\n", ExitCode: 0},
+			{Line: 5, Command: "echo b", Stdout: "b\n", ExitCode: 0},
+		},
+	})
+
+	err := runApp("smokepod", "verify",
+		"--target", "/bin/sh",
+		"--tests", testsDir,
+		"--fixtures", fixturesDir,
+	)
+	// Still fails due to count mismatch
+	if exitCode(err) != exitTestFailure {
+		t.Errorf("expected exit code %d, got %d (err: %v)", exitTestFailure, exitCode(err), err)
+	}
+}
