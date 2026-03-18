@@ -183,3 +183,35 @@ func TestLocalTarget_WrapMode(t *testing.T) {
 		t.Errorf("Stdout = %q, want %q", result.Stdout, "hello\n")
 	}
 }
+
+func TestLocalTarget_WrapMode_ExposesTargetEnv(t *testing.T) {
+	// Wrap mode should expose SMOKEPOD_TARGET and SMOKEPOD_TARGET_ARGS
+	target := NewLocalTarget("/usr/bin/node", []string{"--experimental-vm-modules"}, nil, "wrap")
+	result, err := target.Exec(context.Background(), "echo $SMOKEPOD_TARGET")
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if strings.TrimSpace(result.Stdout) != "/usr/bin/node" {
+		t.Errorf("SMOKEPOD_TARGET = %q, want /usr/bin/node", strings.TrimSpace(result.Stdout))
+	}
+
+	result, err = target.Exec(context.Background(), "echo $SMOKEPOD_TARGET_ARGS")
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if strings.TrimSpace(result.Stdout) != "--experimental-vm-modules" {
+		t.Errorf("SMOKEPOD_TARGET_ARGS = %q, want --experimental-vm-modules", strings.TrimSpace(result.Stdout))
+	}
+}
+
+func TestLocalTarget_NonShellExec_ExposesTargetEnv(t *testing.T) {
+	// Non-shell target in shell mode should also expose env vars
+	target := NewLocalTarget("/usr/bin/jq", []string{"--tab"}, nil, "shell")
+	result, err := target.Exec(context.Background(), "echo $SMOKEPOD_TARGET")
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if strings.TrimSpace(result.Stdout) != "/usr/bin/jq" {
+		t.Errorf("SMOKEPOD_TARGET = %q, want /usr/bin/jq", strings.TrimSpace(result.Stdout))
+	}
+}

@@ -346,6 +346,7 @@ func recordAction(c *cli.Context) error {
 
 	recorded := 0
 	skipped := 0
+	failed := 0
 
 	for _, testFile := range testFiles {
 		fixturePath := smokepod.FixturePathFromTest(testFile, testsPath, fixturesPath)
@@ -361,6 +362,7 @@ func recordAction(c *cli.Context) error {
 		tf, err := testfile.Parse(testFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", testFile, err)
+			failed++
 			continue
 		}
 
@@ -371,11 +373,13 @@ func recordAction(c *cli.Context) error {
 		resolvedTarget, resolvedArgs, resolvedMode, err := resolveTarget(testFile, tf.Metadata, cliTarget, cliTargetArgs, cliMode)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			failed++
 			continue
 		}
 
 		if _, err := exec.LookPath(resolvedTarget); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: target %q not found in PATH\n", testFile, resolvedTarget)
+			failed++
 			continue
 		}
 
@@ -384,6 +388,7 @@ func recordAction(c *cli.Context) error {
 			procTarget, err := smokepod.NewProcessTarget(ctx, resolvedTarget, resolvedArgs...)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error creating process target for %s: %v\n", testFile, err)
+				failed++
 				continue
 			}
 			targetExec = procTarget
@@ -397,6 +402,7 @@ func recordAction(c *cli.Context) error {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting sections from %s: %v\n", testFile, err)
 			_ = targetExec.Close()
+			failed++
 			continue
 		}
 
@@ -433,6 +439,7 @@ func recordAction(c *cli.Context) error {
 
 		if err := smokepod.WriteFixture(fixturePath, fixture); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing fixture %s: %v\n", fixturePath, err)
+			failed++
 			continue
 		}
 
@@ -440,7 +447,10 @@ func recordAction(c *cli.Context) error {
 		recorded++
 	}
 
-	fmt.Fprintf(os.Stderr, "\nSummary: %d recorded, %d skipped\n", recorded, skipped)
+	fmt.Fprintf(os.Stderr, "\nSummary: %d recorded, %d skipped, %d failed\n", recorded, skipped, failed)
+	if failed > 0 && recorded == 0 {
+		return cli.Exit("all test files failed to record", exitTestFailure)
+	}
 	return nil
 }
 

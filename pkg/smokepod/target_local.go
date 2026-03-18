@@ -34,6 +34,9 @@ func NewLocalTarget(path string, args []string, env []string, mode string) *Loca
 	if mode == "" {
 		mode = "shell"
 	}
+	if len(args) > 0 && (mode == "wrap" || (mode == "shell" && !IsShellTarget(path))) {
+		fmt.Fprintf(os.Stderr, "Warning: target-args %v are not passed directly in %s mode; available as $SMOKEPOD_TARGET_ARGS\n", args, mode)
+	}
 	return &LocalTarget{
 		spec: targetLaunchSpec{path: path, args: args},
 		env:  env,
@@ -48,7 +51,18 @@ func (t *LocalTarget) Exec(ctx context.Context, command string) (runners.ExecRes
 	} else {
 		cmd = t.spec.cmd(ctx, "-c", command)
 	}
-	cmd.Env = append(os.Environ(), t.env...)
+
+	env := append(os.Environ(), t.env...)
+
+	// In wrap/non-shell mode, expose the target binary and its args as
+	// environment variables so commands can reference them.
+	if t.mode == "wrap" || (t.mode == "shell" && !IsShellTarget(t.spec.path)) {
+		env = append(env, "SMOKEPOD_TARGET="+t.spec.path)
+		if len(t.spec.args) > 0 {
+			env = append(env, "SMOKEPOD_TARGET_ARGS="+strings.Join(t.spec.args, " "))
+		}
+	}
+	cmd.Env = env
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -79,7 +93,10 @@ func (t *LocalTarget) Close() error {
 
 func (t *LocalTarget) GetVersion(ctx context.Context) string {
 	var cmd *exec.Cmd
-	if len(t.spec.args) > 0 {
+	if t.mode == "wrap" || (t.mode == "shell" && !IsShellTarget(t.spec.path)) {
+		// In wrap/non-shell mode, Exec uses /bin/sh so report the shell version
+		cmd = exec.CommandContext(ctx, "/bin/sh", "--version")
+	} else if len(t.spec.args) > 0 {
 		// Fixed args exist: run path, args..., "--version"
 		cmd = t.spec.cmd(ctx, "--version")
 	} else {
