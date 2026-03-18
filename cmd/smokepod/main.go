@@ -476,9 +476,12 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 
 	reporter := smokepod.NewVerifyReporter(os.Stderr)
 
-	totalPassed := 0
-	totalFailed := 0
-	totalCommands := 0
+	sectionsPassed := 0
+	sectionsFailed := 0
+	sectionsXFail := 0
+	sectionsXPass := 0
+	sectionsTotal := 0
+	var allSectionResults []smokepod.SectionResult
 
 	for _, testFile := range testFiles {
 		fixturePath := smokepod.FixturePathFromTest(testFile, testsPath, fixturesPath)
@@ -486,7 +489,8 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 		fixture, err := smokepod.ReadFixture(fixturePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading fixture %s: %v\n", fixturePath, err)
-			totalFailed++
+			sectionsFailed++
+			sectionsTotal++
 			if failFast {
 				break
 			}
@@ -496,7 +500,8 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 		tf, err := testfile.Parse(testFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", testFile, err)
-			totalFailed++
+			sectionsFailed++
+			sectionsTotal++
 			if failFast {
 				break
 			}
@@ -517,7 +522,8 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 			sections, err = tf.GetSections(nil)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error getting sections from %s: %v\n", testFile, err)
-				totalFailed++
+				sectionsFailed++
+				sectionsTotal++
 				if failFast {
 					break
 				}
@@ -556,8 +562,10 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 			reporter.ReportFailure(fixtureSectionName, fmt.Sprintf(
 				"stale fixture section: exists in fixture but not in .test file (fixture: %s)", fixturePath,
 			))
-			reporter.ReportSection(fixtureSectionName, false)
-			totalFailed++
+			reporter.ReportSection(fixtureSectionName, "fail")
+			sectionsFailed++
+			sectionsTotal++
+			allSectionResults = append(allSectionResults, smokepod.SectionResult{Name: fixtureSectionName, Status: "fail"})
 			staleFailed = true
 			if failFast {
 				break
@@ -579,8 +587,10 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 				}
 				// Section doesn't exist anywhere
 				reporter.ReportFailure(name, "section not found in .test file or fixture")
-				reporter.ReportSection(name, false)
-				totalFailed++
+				reporter.ReportSection(name, "fail")
+				sectionsFailed++
+				sectionsTotal++
+				allSectionResults = append(allSectionResults, smokepod.SectionResult{Name: name, Status: "fail"})
 				runMissingFailed = true
 				if failFast {
 					break
@@ -599,8 +609,10 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 				reporter.ReportFailure(section.Name, fmt.Sprintf(
 					"missing fixture section: exists in .test but not in fixture (fixture: %s)", fixturePath,
 				))
-				reporter.ReportSection(section.Name, false)
-				totalFailed++
+				reporter.ReportSection(section.Name, "fail")
+				sectionsFailed++
+				sectionsTotal++
+				allSectionResults = append(allSectionResults, smokepod.SectionResult{Name: section.Name, Status: "fail"})
 				if failFast {
 					break
 				}
@@ -615,8 +627,10 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 					"command count mismatch: .test has %d commands, fixture has %d (fixture: %s)",
 					testCmdCount, fixtureCmdCount, fixturePath,
 				))
-				reporter.ReportSection(section.Name, false)
-				totalFailed++
+				reporter.ReportSection(section.Name, "fail")
+				sectionsFailed++
+				sectionsTotal++
+				allSectionResults = append(allSectionResults, smokepod.SectionResult{Name: section.Name, Status: "fail"})
 				if failFast {
 					break
 				}
@@ -624,16 +638,10 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 			}
 
 			for i, cmd := range section.Commands {
-				totalCommands++
-
 				result, err := targetExec.Exec(ctx, cmd.Cmd)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
-					totalFailed++
 					sectionPassed = false
-					if failFast {
-						break
-					}
 					continue
 				}
 
@@ -643,11 +651,8 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 				stderrResult := smokepod.CompareOutput(expected.Stderr, result.Stderr)
 				exitMatched := smokepod.CompareExitCode(expected.ExitCode, result.ExitCode)
 
-				if stdoutResult.Matched && stderrResult.Matched && exitMatched {
-					totalPassed++
-				} else {
+				if !(stdoutResult.Matched && stderrResult.Matched && exitMatched) {
 					sectionPassed = false
-					totalFailed++
 
 					var diffParts []string
 					if !stdoutResult.Matched {
@@ -660,34 +665,68 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 						diffParts = append(diffParts, fmt.Sprintf("Exit code: expected %d, got %d", expected.ExitCode, result.ExitCode))
 					}
 
-					reporter.ReportFailure(fmt.Sprintf("%s / %s", section.Name, cmd.Cmd), strings.Join(diffParts, "\n"))
+					if !section.XFail {
+						reporter.ReportFailure(fmt.Sprintf("%s / %s", section.Name, cmd.Cmd), strings.Join(diffParts, "\n"))
+					}
 				}
 			}
 
-			reporter.ReportSection(section.Name, sectionPassed)
+			// Determine section status
+			sectionsTotal++
+			var status string
+			switch {
+			case section.XFail && !sectionPassed:
+				status = "xfail"
+				sectionsXFail++
+			case section.XFail && sectionPassed:
+				status = "xpass"
+				sectionsXPass++
+				reporter.ReportXPass(section.Name, section.XFailReason, testFile, section.Line)
+			case !section.XFail && sectionPassed:
+				status = "pass"
+				sectionsPassed++
+			default:
+				status = "fail"
+				sectionsFailed++
+			}
 
-			if !sectionPassed && failFast {
+			reporter.ReportSection(section.Name, status)
+			allSectionResults = append(allSectionResults, smokepod.SectionResult{
+				Name:        section.Name,
+				Status:      status,
+				XFailReason: section.XFailReason,
+			})
+
+			if (status == "fail" || status == "xpass") && failFast {
 				break
 			}
 		}
 
-		if totalFailed > 0 && failFast {
+		if (sectionsFailed > 0 || sectionsXPass > 0) && failFast {
 			break
 		}
 	}
 
-	reporter.ReportSummary(totalPassed, totalFailed, totalCommands)
+	reporter.ReportSummary(sectionsPassed, sectionsFailed, sectionsXFail, sectionsXPass, sectionsTotal)
 
 	if jsonOutput {
 		result := &smokepod.Result{
 			Name:      "verify",
 			Timestamp: time.Now(),
-			Passed:    totalFailed == 0,
+			Passed:    sectionsFailed == 0 && sectionsXPass == 0,
 			Summary: smokepod.Summary{
-				Total:  totalCommands,
-				Passed: totalPassed,
-				Failed: totalFailed,
+				Total:  sectionsTotal,
+				Passed: sectionsPassed,
+				Failed: sectionsFailed,
+				XFail:  sectionsXFail,
+				XPass:  sectionsXPass,
 			},
+			Tests: []smokepod.TestResult{{
+				Name:     "verify",
+				Type:     "cli",
+				Passed:   sectionsFailed == 0 && sectionsXPass == 0,
+				Sections: allSectionResults,
+			}},
 		}
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
@@ -696,7 +735,7 @@ func runVerify(c *cli.Context, ctx context.Context, targetExec smokepod.Target, 
 		fmt.Println(string(data))
 	}
 
-	if totalFailed > 0 {
+	if sectionsFailed > 0 || sectionsXPass > 0 {
 		return cli.Exit("", exitTestFailure)
 	}
 	return nil
