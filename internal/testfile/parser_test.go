@@ -494,6 +494,153 @@ func TestParse_XFailPreservesName(t *testing.T) {
 	}
 }
 
+func TestParse_Metadata(t *testing.T) {
+	t.Run("target and target-arg before sections", func(t *testing.T) {
+		f, err := os.CreateTemp("", "meta*.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(f.Name()) }()
+		content := "# target: /usr/bin/jq\n# target-arg: --tab\n\n## basic\n$ echo hello\nhello\n"
+		if _, err := f.WriteString(content); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+
+		tf, err := Parse(f.Name())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if tf.Metadata == nil {
+			t.Fatal("Metadata is nil, want non-nil")
+		}
+		if got := tf.Metadata["target"]; len(got) != 1 || got[0] != "/usr/bin/jq" {
+			t.Errorf("target = %v, want [/usr/bin/jq]", got)
+		}
+		if got := tf.Metadata["target-arg"]; len(got) != 1 || got[0] != "--tab" {
+			t.Errorf("target-arg = %v, want [--tab]", got)
+		}
+	})
+
+	t.Run("mode directive", func(t *testing.T) {
+		f, err := os.CreateTemp("", "meta*.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(f.Name()) }()
+		content := "# mode: process\n\n## basic\n$ echo hello\nhello\n"
+		if _, err := f.WriteString(content); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+
+		tf, err := Parse(f.Name())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if tf.Metadata == nil {
+			t.Fatal("Metadata is nil, want non-nil")
+		}
+		if got := tf.Metadata["mode"]; len(got) != 1 || got[0] != "process" {
+			t.Errorf("mode = %v, want [process]", got)
+		}
+	})
+
+	t.Run("regular comments before sections", func(t *testing.T) {
+		f, err := os.CreateTemp("", "meta*.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(f.Name()) }()
+		content := "# this is just a comment\n# another comment without colon pattern\n\n## basic\n$ echo hello\nhello\n"
+		if _, err := f.WriteString(content); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+
+		tf, err := Parse(f.Name())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if tf.Metadata != nil {
+			t.Errorf("Metadata = %v, want nil", tf.Metadata)
+		}
+	})
+
+	t.Run("metadata-like comments after section header ignored", func(t *testing.T) {
+		f, err := os.CreateTemp("", "meta*.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(f.Name()) }()
+		content := "## basic\n# target: /bin/sh\n$ echo hello\nhello\n"
+		if _, err := f.WriteString(content); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+
+		tf, err := Parse(f.Name())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if tf.Metadata != nil {
+			t.Errorf("Metadata = %v, want nil (directives after section header should be ignored)", tf.Metadata)
+		}
+	})
+
+	t.Run("no metadata at all", func(t *testing.T) {
+		tf, err := Parse(testdataPath("simple.test"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if tf.Metadata != nil {
+			t.Errorf("Metadata = %v, want nil", tf.Metadata)
+		}
+
+		// sections should still parse normally
+		if len(tf.Sections) != 1 {
+			t.Errorf("sections = %d, want 1", len(tf.Sections))
+		}
+	})
+
+	t.Run("multiple target-arg values collected in order", func(t *testing.T) {
+		f, err := os.CreateTemp("", "meta*.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(f.Name()) }()
+		content := "# target-arg: --tab\n# target-arg: --raw-output\n# target-arg: --indent\n\n## basic\n$ echo hello\nhello\n"
+		if _, err := f.WriteString(content); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+
+		tf, err := Parse(f.Name())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if tf.Metadata == nil {
+			t.Fatal("Metadata is nil, want non-nil")
+		}
+		got := tf.Metadata["target-arg"]
+		want := []string{"--tab", "--raw-output", "--indent"}
+		if len(got) != len(want) {
+			t.Fatalf("target-arg = %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("target-arg[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+}
+
 func TestParse_XFailLineNumbers(t *testing.T) {
 	tf, err := Parse(testdataPath("xfail.test"))
 	if err != nil {

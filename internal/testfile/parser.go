@@ -13,7 +13,8 @@ import (
 // TestFile represents a parsed .test file.
 type TestFile struct {
 	Sections map[string]*Section
-	Order    []string // preserve section order
+	Order    []string             // preserve section order
+	Metadata map[string][]string  // directives from pre-section comments
 }
 
 // Section is a named group of commands.
@@ -61,10 +62,11 @@ func (e *ParseError) Error() string {
 }
 
 var (
-	sectionPattern  = regexp.MustCompile(`^##\s+(\S+)(?:\s+\((xfail)(?::\s*([^)]+))?\))?`)
-	commandPattern  = regexp.MustCompile(`^\$\s+(.+)`)
-	exitCodePattern = regexp.MustCompile(`^\[exit:(\d+)\]$`)
-	suffixPattern   = regexp.MustCompile(`\s+\((re|stderr)(?:,(re|stderr))*\)$`)
+	sectionPattern   = regexp.MustCompile(`^##\s+(\S+)(?:\s+\((xfail)(?::\s*([^)]+))?\))?`)
+	commandPattern   = regexp.MustCompile(`^\$\s+(.+)`)
+	exitCodePattern  = regexp.MustCompile(`^\[exit:(\d+)\]$`)
+	suffixPattern    = regexp.MustCompile(`\s+\((re|stderr)(?:,(re|stderr))*\)$`)
+	metadataPattern  = regexp.MustCompile(`^#\s+(\w[\w-]*):\s+(.+)$`)
 )
 
 // Parse reads and parses a .test file.
@@ -90,7 +92,19 @@ func Parse(path string) (*TestFile, error) {
 		line := scanner.Text()
 
 		// Handle comments
-		if strings.HasPrefix(strings.TrimSpace(line), "#") && !strings.HasPrefix(strings.TrimSpace(line), "##") {
+		trimmedLine := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmedLine, "#") && !strings.HasPrefix(trimmedLine, "##") {
+			// Before the first section header, attempt to parse as a metadata directive
+			if len(tf.Order) == 0 {
+				if matches := metadataPattern.FindStringSubmatch(trimmedLine); matches != nil {
+					key := matches[1]
+					value := strings.TrimSpace(matches[2])
+					if tf.Metadata == nil {
+						tf.Metadata = make(map[string][]string)
+					}
+					tf.Metadata[key] = append(tf.Metadata[key], value)
+				}
+			}
 			continue
 		}
 
