@@ -78,7 +78,11 @@ func TestFormatDiff(t *testing.T) {
 	expected := []string{"line1", "line2", "line3"}
 	actual := []string{"line1", "different", "line3"}
 
-	diff := formatDiff(expected, actual)
+	diff, wsDiff := formatDiff(expected, actual)
+
+	if wsDiff {
+		t.Error("Content-only diff should not report whitespace diff")
+	}
 
 	if !strings.Contains(diff, "--- expected") {
 		t.Error("Diff should contain expected header")

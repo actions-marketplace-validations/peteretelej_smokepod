@@ -3,10 +3,13 @@ package smokepod
 import (
 	"fmt"
 	"strings"
+
+	"github.com/peteretelej/smokepod/internal/whitespace"
 )
 
-func formatDiff(expected, actual []string) string {
+func formatDiff(expected, actual []string) (string, bool) {
 	var b strings.Builder
+	hasWSDiff := false
 
 	b.WriteString("--- expected\n")
 	b.WriteString("+++ actual\n")
@@ -25,6 +28,14 @@ func formatDiff(expected, actual []string) string {
 			if expected[i] == actual[i] {
 				b.WriteString(" ")
 				b.WriteString(expected[i])
+				b.WriteString("\n")
+			} else if whitespace.IsWhitespaceDiff(expected[i], actual[i]) {
+				hasWSDiff = true
+				b.WriteString("-")
+				b.WriteString(whitespace.RenderWhitespace(expected[i]))
+				b.WriteString("\n")
+				b.WriteString("+")
+				b.WriteString(whitespace.RenderWhitespace(actual[i]))
 				b.WriteString("\n")
 			} else {
 				b.WriteString("-")
@@ -45,7 +56,7 @@ func formatDiff(expected, actual []string) string {
 		}
 	}
 
-	return b.String()
+	return b.String(), hasWSDiff
 }
 
 func formatHunkHeader(expStart, expLen, actStart, actLen int) string {

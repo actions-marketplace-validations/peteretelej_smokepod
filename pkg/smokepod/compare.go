@@ -5,10 +5,11 @@ import (
 )
 
 type CompareResult struct {
-	Matched     bool
-	Diff        string
-	ExitCode    int
-	ExitMatched bool
+	Matched        bool
+	Diff           string
+	ExitCode       int
+	ExitMatched    bool
+	WhitespaceDiff bool
 }
 
 func CompareOutput(expected, actual string) CompareResult {
@@ -16,17 +17,21 @@ func CompareOutput(expected, actual string) CompareResult {
 	actualLines := splitLines(actual)
 
 	if len(expectedLines) != len(actualLines) {
+		diff, wsDiff := formatDiff(expectedLines, actualLines)
 		return CompareResult{
-			Matched: false,
-			Diff:    formatDiff(expectedLines, actualLines),
+			Matched:        false,
+			Diff:           diff,
+			WhitespaceDiff: wsDiff,
 		}
 	}
 
 	for i, exp := range expectedLines {
 		if exp != actualLines[i] {
+			diff, wsDiff := formatDiff(expectedLines, actualLines)
 			return CompareResult{
-				Matched: false,
-				Diff:    formatDiff(expectedLines, actualLines),
+				Matched:        false,
+				Diff:           diff,
+				WhitespaceDiff: wsDiff,
 			}
 		}
 	}
