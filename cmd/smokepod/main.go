@@ -364,6 +364,10 @@ func recordAction(c *cli.Context) error {
 			continue
 		}
 
+		for _, w := range tf.Warnings {
+			fmt.Fprintf(os.Stderr, "Warning: %s: %s\n", testFile, w)
+		}
+
 		resolvedTarget, resolvedArgs, resolvedMode, err := resolveTarget(testFile, tf.Metadata, cliTarget, cliTargetArgs, cliMode)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -525,6 +529,10 @@ func runVerify(c *cli.Context, ctx context.Context, cliTarget string, cliTargetA
 				break
 			}
 			continue
+		}
+
+		for _, w := range tf.Warnings {
+			fmt.Fprintf(os.Stderr, "Warning: %s: %s\n", testFile, w)
 		}
 
 		resolvedTarget, resolvedArgs, resolvedMode, err := resolveTarget(testFile, tf.Metadata, cliTarget, cliTargetArgs, cliMode)

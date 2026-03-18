@@ -663,3 +663,139 @@ func TestParse_XFailLineNumbers(t *testing.T) {
 		}
 	}
 }
+
+func TestParse_MisplacedDirectiveWarning(t *testing.T) {
+	f, err := os.CreateTemp("", "misplaced*.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+
+	content := "## section\n# target: /bin/sh\n$ echo hi\nhi\n"
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	tf, err := Parse(f.Name())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(tf.Warnings) != 1 {
+		t.Fatalf("Warnings = %v, want 1 warning", tf.Warnings)
+	}
+	if !strings.Contains(tf.Warnings[0], "will be ignored") {
+		t.Errorf("warning = %q, want to contain 'will be ignored'", tf.Warnings[0])
+	}
+	// Misplaced directive should NOT be stored in Metadata
+	if tf.Metadata != nil {
+		t.Errorf("Metadata = %v, want nil (misplaced directive should not be stored)", tf.Metadata)
+	}
+}
+
+func TestParse_UnknownDirectiveWithSuggestion(t *testing.T) {
+	f, err := os.CreateTemp("", "unknown*.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+
+	content := "# taret: /bin/sh\n## s\n$ echo hi\nhi\n"
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	tf, err := Parse(f.Name())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(tf.Warnings) != 1 {
+		t.Fatalf("Warnings = %v, want 1 warning", tf.Warnings)
+	}
+	if !strings.Contains(tf.Warnings[0], `did you mean "target"`) {
+		t.Errorf("warning = %q, want to contain 'did you mean \"target\"'", tf.Warnings[0])
+	}
+	// Unknown directive should still be stored in Metadata
+	if tf.Metadata == nil || tf.Metadata["taret"] == nil {
+		t.Error("unknown directive should still be stored in Metadata")
+	}
+}
+
+func TestParse_UnknownDirectiveWithoutSuggestion(t *testing.T) {
+	f, err := os.CreateTemp("", "unknown*.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+
+	content := "# zzzzz: foo\n## s\n$ echo hi\nhi\n"
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	tf, err := Parse(f.Name())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(tf.Warnings) != 1 {
+		t.Fatalf("Warnings = %v, want 1 warning", tf.Warnings)
+	}
+	if !strings.Contains(tf.Warnings[0], `unknown directive "zzzzz"`) {
+		t.Errorf("warning = %q, want to contain 'unknown directive \"zzzzz\"'", tf.Warnings[0])
+	}
+	if strings.Contains(tf.Warnings[0], "did you mean") {
+		t.Errorf("warning = %q, should NOT contain 'did you mean' for distant key", tf.Warnings[0])
+	}
+	// Still stored in Metadata
+	if tf.Metadata == nil || tf.Metadata["zzzzz"] == nil {
+		t.Error("unknown directive should still be stored in Metadata")
+	}
+}
+
+func TestParse_KnownDirectivesNoWarnings(t *testing.T) {
+	f, err := os.CreateTemp("", "known*.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+
+	content := "# target: /bin/sh\n# mode: shell\n## s\n$ echo hi\nhi\n"
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	tf, err := Parse(f.Name())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(tf.Warnings) != 0 {
+		t.Errorf("Warnings = %v, want no warnings for known directives", tf.Warnings)
+	}
+}
+
+func TestEditDistance(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"taret", "target", 1},
+		{"mode", "mode", 0},
+		{"zzzzz", "target", 6},
+		{"", "target", 6},
+		{"target", "", 6},
+		{"target-arg", "target-arg", 0},
+	}
+	for _, tt := range tests {
+		got := editDistance(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("editDistance(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+}

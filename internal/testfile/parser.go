@@ -15,6 +15,7 @@ type TestFile struct {
 	Sections map[string]*Section
 	Order    []string             // preserve section order
 	Metadata map[string][]string  // directives from pre-section comments
+	Warnings []string             // parser warnings (non-fatal)
 }
 
 // Section is a named group of commands.
@@ -69,6 +70,45 @@ var (
 	metadataPattern  = regexp.MustCompile(`^#\s+(\w[\w-]*):\s+(.+)$`)
 )
 
+var knownDirectives = map[string]bool{
+	"target": true, "target-arg": true, "mode": true, "xfail": true,
+}
+
+func editDistance(a, b string) int {
+	la, lb := len(a), len(b)
+	d := make([][]int, la+1)
+	for i := range d {
+		d[i] = make([]int, lb+1)
+		d[i][0] = i
+	}
+	for j := 1; j <= lb; j++ {
+		d[0][j] = j
+	}
+	for i := 1; i <= la; i++ {
+		for j := 1; j <= lb; j++ {
+			cost := 0
+			if a[i-1] != b[j-1] {
+				cost = 1
+			}
+			d[i][j] = min(d[i-1][j]+1, min(d[i][j-1]+1, d[i-1][j-1]+cost))
+		}
+	}
+	return d[la][lb]
+}
+
+func closestDirective(key string) string {
+	best := ""
+	bestDist := 3 // threshold: suggest only if distance <= 2
+	for known := range knownDirectives {
+		d := editDistance(key, known)
+		if d < bestDist || (d == bestDist && known < best) {
+			bestDist = d
+			best = known
+		}
+	}
+	return best
+}
+
 // Parse reads and parses a .test file.
 func Parse(path string) (*TestFile, error) {
 	f, err := os.Open(path)
@@ -94,8 +134,8 @@ func Parse(path string) (*TestFile, error) {
 		// Handle comments
 		trimmedLine := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmedLine, "#") && !strings.HasPrefix(trimmedLine, "##") {
-			// Before the first section header, attempt to parse as a metadata directive
 			if len(tf.Order) == 0 {
+				// Before the first section header, attempt to parse as a metadata directive
 				if matches := metadataPattern.FindStringSubmatch(trimmedLine); matches != nil {
 					key := matches[1]
 					value := strings.TrimSpace(matches[2])
@@ -103,6 +143,28 @@ func Parse(path string) (*TestFile, error) {
 						tf.Metadata = make(map[string][]string)
 					}
 					tf.Metadata[key] = append(tf.Metadata[key], value)
+
+					// Warn on unknown directives
+					if !knownDirectives[key] {
+						suggestion := closestDirective(key)
+						if suggestion != "" {
+							tf.Warnings = append(tf.Warnings, fmt.Sprintf(
+								"line %d: unknown directive %q, did you mean %q?", lineNum, key, suggestion))
+						} else {
+							tf.Warnings = append(tf.Warnings, fmt.Sprintf(
+								"line %d: unknown directive %q", lineNum, key))
+						}
+					}
+				}
+			} else {
+				// After the first section header, warn if a known directive appears
+				if matches := metadataPattern.FindStringSubmatch(trimmedLine); matches != nil {
+					key := matches[1]
+					if knownDirectives[key] {
+						tf.Warnings = append(tf.Warnings, fmt.Sprintf(
+							"line %d: directive '# %s: ...' will be ignored (directives must appear before the first section)",
+							lineNum, key))
+					}
 				}
 			}
 			continue
