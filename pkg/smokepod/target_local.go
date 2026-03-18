@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/peteretelej/smokepod/pkg/smokepod/runners"
@@ -14,11 +15,39 @@ import (
 var knownShells = map[string]bool{
 	"sh": true, "bash": true, "zsh": true,
 	"dash": true, "ksh": true, "fish": true,
+	"cmd": true, "cmd.exe": true,
+	"powershell": true, "powershell.exe": true,
+	"pwsh": true, "pwsh.exe": true,
+}
+
+// defaultShell returns the platform's default shell for running commands.
+func defaultShell() string {
+	if runtime.GOOS == "windows" {
+		return "cmd.exe"
+	}
+	return "/bin/sh"
+}
+
+// shellExecFlag returns the flag used to pass a command string to a shell.
+// cmd.exe uses "/c", everything else uses "-c".
+func shellExecFlag(shell string) string {
+	base := strings.TrimSuffix(filepath.Base(shell), ".exe")
+	if base == "cmd" {
+		return "/c"
+	}
+	return "-c"
 }
 
 // IsShellTarget returns true if the given path refers to a known shell.
+// It handles both Unix and Windows path separators regardless of the
+// current platform.
 func IsShellTarget(path string) bool {
-	return knownShells[filepath.Base(path)]
+	base := filepath.Base(path)
+	// Handle Windows backslash paths on non-Windows platforms
+	if i := strings.LastIndex(base, "\\"); i >= 0 {
+		base = base[i+1:]
+	}
+	return knownShells[base]
 }
 
 type LocalTarget struct {
@@ -29,7 +58,7 @@ type LocalTarget struct {
 
 func NewLocalTarget(path string, args []string, env []string, mode string) *LocalTarget {
 	if path == "" {
-		path = "/bin/sh"
+		path = defaultShell()
 	}
 	if mode == "" {
 		mode = "shell"
@@ -47,9 +76,10 @@ func NewLocalTarget(path string, args []string, env []string, mode string) *Loca
 func (t *LocalTarget) Exec(ctx context.Context, command string) (runners.ExecResult, error) {
 	var cmd *exec.Cmd
 	if t.mode == "wrap" || (t.mode == "shell" && !IsShellTarget(t.spec.path)) {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
+		shell := defaultShell()
+		cmd = exec.CommandContext(ctx, shell, shellExecFlag(shell), command)
 	} else {
-		cmd = t.spec.cmd(ctx, "-c", command)
+		cmd = t.spec.cmd(ctx, shellExecFlag(t.spec.path), command)
 	}
 
 	env := append(os.Environ(), t.env...)
@@ -94,8 +124,8 @@ func (t *LocalTarget) Close() error {
 func (t *LocalTarget) GetVersion(ctx context.Context) string {
 	var cmd *exec.Cmd
 	if t.mode == "wrap" || (t.mode == "shell" && !IsShellTarget(t.spec.path)) {
-		// In wrap/non-shell mode, Exec uses /bin/sh so report the shell version
-		cmd = exec.CommandContext(ctx, "/bin/sh", "--version")
+		// In wrap/non-shell mode, Exec uses the default shell so report its version
+		cmd = exec.CommandContext(ctx, defaultShell(), "--version")
 	} else if len(t.spec.args) > 0 {
 		// Fixed args exist: run path, args..., "--version"
 		cmd = t.spec.cmd(ctx, "--version")

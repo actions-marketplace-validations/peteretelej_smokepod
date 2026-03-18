@@ -151,6 +151,11 @@ func TestIsShellTarget(t *testing.T) {
 		{"fish", true},
 		{"dash", true},
 		{"ksh", true},
+		{"cmd.exe", true},
+		{"cmd", true},
+		{"C:\\Windows\\System32\\cmd.exe", true},
+		{"powershell.exe", true},
+		{"pwsh", true},
 	}
 	for _, tt := range tests {
 		got := IsShellTarget(tt.path)
