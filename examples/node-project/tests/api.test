@@ -1,0 +1,9 @@
+# API smoke tests
+
+## health
+$ curl -s http://host.docker.internal:8080/health
+{"status":"ok"}
+
+## version
+$ curl -s http://host.docker.internal:8080/version
+{"version":".*"} (re)

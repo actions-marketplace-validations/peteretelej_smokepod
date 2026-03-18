@@ -1,0 +1,10 @@
+{
+  "name": "smokepod-node-example",
+  "private": true,
+  "scripts": {
+    "smoke": "smokepod run smokepod.yaml"
+  },
+  "devDependencies": {
+    "smokepod": "latest"
+  }
+}

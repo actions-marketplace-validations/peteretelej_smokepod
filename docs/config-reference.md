@@ -119,6 +119,10 @@ The `record` and `verify` commands operate on `.test` files directly without a Y
 ### Record
 
 ```bash
+# npx
+npx smokepod record --target /bin/bash --tests tests/ --fixtures fixtures/
+
+# Go-installed binary
 smokepod record --target /bin/bash --tests tests/ --fixtures fixtures/
 ```
 
@@ -145,6 +149,10 @@ Recording is refused in CI environments (when `CI` env var is set) unless `--upd
 ### Verify
 
 ```bash
+# npx
+npx smokepod verify --target ./my-shell --tests tests/ --fixtures fixtures/
+
+# Go-installed binary
 smokepod verify --target ./my-shell --tests tests/ --fixtures fixtures/
 ```
 
@@ -171,7 +179,7 @@ smokepod verify --target ./my-shell --tests tests/ --fixtures fixtures/
 Settings can be overridden via CLI flags:
 
 ```bash
-smokepod run config.yaml --timeout=2m --fail-fast --sequential
+npx smokepod run config.yaml --timeout=2m --fail-fast --sequential
 ```
 
 | Flag | Overrides |

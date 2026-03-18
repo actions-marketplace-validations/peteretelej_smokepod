@@ -11,7 +11,7 @@ npm install
 ## Run with Smokepod
 
 ```bash
-smokepod run smokepod.yaml
+npx smokepod run smokepod.yaml
 ```
 
 ## Run Locally

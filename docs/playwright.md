@@ -22,18 +22,7 @@ tests:
     args: ["--grep", "@smoke"]  # optional: pass-through to playwright
 ```
 
-### Required Fields
-
-| Field | Description |
-|-------|-------------|
-| `path` | Path to your Playwright project (contains `playwright.config.ts` and `package.json`) |
-
-### Optional Fields
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `image` | `mcr.microsoft.com/playwright:latest` | Docker image |
-| `args` | `[]` | Arguments passed to `npx playwright test` |
+See [config-reference.md](config-reference.md) for all Playwright test fields.
 
 ## Project Requirements
 
@@ -73,11 +62,9 @@ export default defineConfig({
 });
 ```
 
-Note: Use `host.docker.internal` to reach services running on the host machine.
+Use `host.docker.internal` to reach services running on the host machine.
 
 ## Docker Images
-
-Available Playwright images:
 
 | Image | Description |
 |-------|-------------|
@@ -98,9 +85,6 @@ args: ["--grep", "@smoke"]
 # Run specific test file
 args: ["tests/login.spec.ts"]
 
-# Run in headed mode (requires X11 forwarding)
-args: ["--headed"]
-
 # Retry failed tests
 args: ["--retries", "2"]
 
@@ -108,64 +92,11 @@ args: ["--retries", "2"]
 args: ["--project", "chromium"]
 ```
 
-## Example Configurations
-
-### Basic Setup
-
-```yaml
-name: e2e-tests
-version: "1"
-
-tests:
-  - name: e2e
-    type: playwright
-    path: ./e2e
-```
-
-### Smoke Tests Only
-
-```yaml
-tests:
-  - name: e2e-smoke
-    type: playwright
-    path: ./e2e
-    args: ["--grep", "@smoke"]
-```
-
-### Multiple Test Suites
-
-```yaml
-tests:
-  - name: e2e-smoke
-    type: playwright
-    path: ./e2e
-    args: ["--grep", "@smoke"]
-
-  - name: e2e-critical
-    type: playwright
-    path: ./e2e
-    args: ["--grep", "@critical"]
-
-  - name: e2e-full
-    type: playwright
-    path: ./e2e
-```
-
-### Pinned Version
-
-```yaml
-tests:
-  - name: e2e
-    type: playwright
-    path: ./e2e
-    image: mcr.microsoft.com/playwright:v1.45.0-jammy
-```
-
 ## Troubleshooting
 
 ### "Cannot find module '@playwright/test'"
 
-Your `package.json` doesn't include Playwright:
+Ensure `package.json` includes the Playwright dependency:
 
 ```json
 {
@@ -177,22 +108,17 @@ Your `package.json` doesn't include Playwright:
 
 ### Tests timeout
 
-1. Increase the global timeout:
-   ```yaml
-   settings:
-     timeout: 15m
-   ```
+Increase the global timeout in your smokepod config, or add a timeout to `playwright.config.ts`:
 
-2. Or add timeout to playwright config:
-   ```typescript
-   export default defineConfig({
-     timeout: 60000,
-   });
-   ```
+```typescript
+export default defineConfig({
+  timeout: 60000,
+});
+```
 
 ### Cannot connect to localhost
 
-Inside Docker, `localhost` refers to the container itself. Use `host.docker.internal`:
+Inside Docker, `localhost` refers to the container. Use `host.docker.internal`:
 
 ```typescript
 use: {
@@ -200,19 +126,11 @@ use: {
 }
 ```
 
-### Image pull slow
-
-Pre-pull the image before running tests:
-
-```bash
-docker pull mcr.microsoft.com/playwright:v1.45.0-jammy
-```
-
 ### Tests pass locally but fail in smokepod
 
-1. Ensure CI environment is handled in your tests
-2. The container runs with `CI=true` environment variable
-3. Check for browser-specific issues (container may not have GPU)
+- The container runs with `CI=true`, which may change behavior
+- No GPU acceleration in the container, which affects rendering timing
+- Pre-pull the image to avoid timeout issues: `docker pull mcr.microsoft.com/playwright:v1.45.0-jammy`
 
 ### Permission denied on mounted files
 
@@ -220,12 +138,8 @@ The container runs as root by default. If your tests create files, they may have
 
 ## JSON Output
 
-Smokepod parses Playwright's JSON reporter output. Test results include:
-- Pass/fail status
-- Test duration
-- Error messages for failures
+Test results include pass/fail status, duration, and error messages:
 
-Example result:
 ```json
 {
   "name": "e2e-smoke",

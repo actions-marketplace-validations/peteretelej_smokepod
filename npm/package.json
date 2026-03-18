@@ -3,6 +3,10 @@
   "version": "0.0.0-dev",
   "description": "Thin npm wrapper for Smokepod release binaries.",
   "sourceControlVersion": "0.0.0-dev is source-control-only; the release workflow rewrites it from the Git tag before npm publish.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/peteretelej/smokepod.git"
+  },
   "private": false,
   "type": "module",
   "engines": {

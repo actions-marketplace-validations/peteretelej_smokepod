@@ -1,0 +1,11 @@
+name: node-project-smoke
+version: "1"
+
+settings:
+  timeout: 2m
+
+tests:
+  - name: api-smoke
+    type: cli
+    image: curlimages/curl:latest
+    file: tests/api.test

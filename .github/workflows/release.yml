@@ -160,6 +160,8 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - run: npm install -g npm@latest
+
       - name: Set npm package version from tag
         working-directory: npm
         shell: bash

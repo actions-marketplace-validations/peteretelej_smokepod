@@ -2,16 +2,17 @@
 
 Example of using smokepod as a Go library.
 
-## Build
-
-```bash
-go build -o library-usage .
-```
-
 ## Run
 
 ```bash
-./library-usage ../simple-cli/smokepod.yaml
+go run . ../cli-docker/smokepod.yaml
+```
+
+Or build and run separately:
+
+```bash
+go build -o library-usage .
+./library-usage ../cli-docker/smokepod.yaml
 ```
 
 ## Code Overview

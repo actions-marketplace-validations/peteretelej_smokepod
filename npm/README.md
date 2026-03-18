@@ -46,9 +46,9 @@ After install, use `smokepod` from package scripts or through your package manag
 
 ## More documentation
 
-- Main project README: `../README.md`
-- Troubleshooting guide: `../docs/troubleshooting.md`
-- Configuration reference: `../docs/config-reference.md`
+- [Full documentation on GitHub](https://github.com/peteretelej/smokepod)
+- [Troubleshooting](https://github.com/peteretelej/smokepod/blob/main/docs/troubleshooting.md)
+- [Configuration reference](https://github.com/peteretelej/smokepod/blob/main/docs/config-reference.md)
 
 ## Local development
 

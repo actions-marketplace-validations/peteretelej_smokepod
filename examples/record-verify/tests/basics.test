@@ -1,0 +1,14 @@
+# Basic shell commands for record/verify
+
+## echo
+$ echo "hello world"
+
+## arithmetic
+$ echo $((2 + 3))
+
+## multiline
+$ printf "line1\nline2\nline3"
+
+## exit-code
+$ false
+[exit:1]
