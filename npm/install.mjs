@@ -1,4 +1,4 @@
-import { constants } from 'node:fs';
+import { constants, realpathSync } from 'node:fs';
 import { access, chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import http from 'node:http';
@@ -11,6 +11,18 @@ const PACKAGE_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const RELEASE_REPOSITORY = 'https://github.com/peteretelej/smokepod/releases/download';
 const REDIRECT_STATUS_CODES = new Set([301, 302, 307, 308]);
 const MAX_REDIRECTS = 5;
+
+function isDirectExecution(entryUrl, argv1 = process.argv[1]) {
+  if (!argv1) {
+    return false;
+  }
+
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(entryUrl));
+  } catch {
+    return false;
+  }
+}
 
 export const CHECKSUM_FILE = 'checksums.txt';
 
@@ -337,7 +349,7 @@ export async function main(options = {}) {
   });
 }
 
-if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href) {
+if (isDirectExecution(import.meta.url)) {
   try {
     await main();
   } catch (error) {
