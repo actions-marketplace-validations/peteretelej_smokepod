@@ -140,6 +140,9 @@ func (p *ProcessTarget) drainStderr(r io.Reader) {
 }
 
 func (p *ProcessTarget) stderrTail() string {
+	// Give drainStderr goroutine a moment to process buffered pipe data.
+	// This is only called on error paths, so the latency is acceptable.
+	time.Sleep(10 * time.Millisecond)
 	tail := p.stderrBuf.String()
 	if tail == "" {
 		return ""
