@@ -11,9 +11,12 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if err := exec.Command("docker", "info").Run(); err != nil {
-		fmt.Fprintln(os.Stderr, "FAIL: docker is required - start Docker Desktop or Docker daemon to run tests")
-		os.Exit(1)
+	// Skip docker check when running as a helper subprocess (ProcessTarget tests).
+	if os.Getenv("SMOKEPOD_TEST_HELPER") != "1" {
+		if err := exec.Command("docker", "info").Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "FAIL: docker is required - start Docker Desktop or Docker daemon to run tests")
+			os.Exit(1)
+		}
 	}
 	os.Exit(m.Run())
 }

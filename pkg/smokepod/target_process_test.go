@@ -115,24 +115,46 @@ func helperEnv(mode string) []string {
 func newTestProcessTarget(t *testing.T, mode string) *ProcessTarget {
 	t.Helper()
 	path, args := helperCommand()
-	env := helperEnv(mode)
 
-	// Set env vars for the subprocess
-	for _, e := range env {
-		parts := strings.SplitN(e, "=", 2)
-		t.Setenv(parts[0], parts[1])
-	}
+	// Build the cmd manually so we can set Env without t.Setenv,
+	// which allows t.Parallel().
+	cmd := exec.CommandContext(context.Background(), path, args...)
+	cmd.Env = append(os.Environ(), helperEnv(mode)...)
 
-	ctx := context.Background()
-	target, err := NewProcessTarget(ctx, path, args...)
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		t.Fatalf("NewProcessTarget failed: %v", err)
+		t.Fatalf("StdinPipe: %v", err)
 	}
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("StdoutPipe: %v", err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("StderrPipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	target := &ProcessTarget{
+		cmd:       cmd,
+		stdin:     stdin,
+		decoder:   json.NewDecoder(stdoutPipe),
+		stderrBuf: newStderrTailBuffer(stderrTailMaxSize),
+	}
+	target.wg.Add(1)
+	go func() {
+		defer target.wg.Done()
+		target.drainStderr(stderrPipe)
+	}()
+
 	t.Cleanup(func() { _ = target.Close() })
 	return target
 }
 
 func TestProcessTarget_Exec(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "")
 
 	result, err := target.Exec(context.Background(), "echo hello")
@@ -149,6 +171,7 @@ func TestProcessTarget_Exec(t *testing.T) {
 }
 
 func TestProcessTarget_ExecExitCode(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "")
 
 	result, err := target.Exec(context.Background(), "exit 42")
@@ -162,6 +185,7 @@ func TestProcessTarget_ExecExitCode(t *testing.T) {
 }
 
 func TestProcessTarget_ExecStderr(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "")
 
 	result, err := target.Exec(context.Background(), "echo error >&2")
@@ -175,6 +199,7 @@ func TestProcessTarget_ExecStderr(t *testing.T) {
 }
 
 func TestProcessTarget_ExecMultipleCommands(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "")
 
 	for i := range 3 {
@@ -190,6 +215,7 @@ func TestProcessTarget_ExecMultipleCommands(t *testing.T) {
 }
 
 func TestProcessTarget_ExecProcessCrash(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "crash")
 
 	_, err := target.Exec(context.Background(), "echo hello")
@@ -199,6 +225,7 @@ func TestProcessTarget_ExecProcessCrash(t *testing.T) {
 }
 
 func TestProcessTarget_ExecMalformedJSON(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "bad_json")
 
 	_, err := target.Exec(context.Background(), "echo hello")
@@ -211,6 +238,7 @@ func TestProcessTarget_ExecMalformedJSON(t *testing.T) {
 }
 
 func TestProcessTarget_ExecMalformedJSON_IncludesStderr(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "bad_json")
 
 	_, err := target.Exec(context.Background(), "echo hello")
@@ -223,6 +251,7 @@ func TestProcessTarget_ExecMalformedJSON_IncludesStderr(t *testing.T) {
 }
 
 func TestProcessTarget_ExecCrash_IncludesStderr(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "crash")
 
 	_, err := target.Exec(context.Background(), "echo hello")
@@ -236,6 +265,7 @@ func TestProcessTarget_ExecCrash_IncludesStderr(t *testing.T) {
 }
 
 func TestProcessTarget_ExecTimeout(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
@@ -251,6 +281,7 @@ func TestProcessTarget_ExecTimeout(t *testing.T) {
 }
 
 func TestProcessTarget_Close(t *testing.T) {
+	t.Parallel()
 	target := newTestProcessTarget(t, "")
 
 	// Execute a command to confirm process is alive
@@ -267,21 +298,8 @@ func TestProcessTarget_Close(t *testing.T) {
 }
 
 func TestProcessTarget_DirectExecArgs(t *testing.T) {
-	// Verify that NewProcessTarget passes args directly (no sh -c wrapping)
-	path, args := helperCommand()
-	env := helperEnv("")
-
-	for _, e := range env {
-		parts := strings.SplitN(e, "=", 2)
-		t.Setenv(parts[0], parts[1])
-	}
-
-	ctx := context.Background()
-	target, err := NewProcessTarget(ctx, path, args...)
-	if err != nil {
-		t.Fatalf("NewProcessTarget failed: %v", err)
-	}
-	defer func() { _ = target.Close() }()
+	t.Parallel()
+	target := newTestProcessTarget(t, "")
 
 	result, err := target.Exec(context.Background(), "echo direct")
 	if err != nil {
@@ -293,6 +311,7 @@ func TestProcessTarget_DirectExecArgs(t *testing.T) {
 }
 
 func TestProcessTarget_LargeResponse(t *testing.T) {
+	t.Parallel()
 	// Generate a response payload slightly above 1MB (1.1MB) to verify
 	// json.Decoder has no fixed buffer limit like bufio.Scanner did.
 	target := newTestProcessTarget(t, "")
@@ -311,6 +330,7 @@ func TestProcessTarget_LargeResponse(t *testing.T) {
 }
 
 func TestProcessTarget_StderrBuffering(t *testing.T) {
+	t.Parallel()
 	// Use stderr_output mode which writes to stderr during normal operation
 	target := newTestProcessTarget(t, "stderr_output")
 
@@ -330,6 +350,7 @@ func TestProcessTarget_StderrBuffering(t *testing.T) {
 }
 
 func TestStderrTailBuffer_Basic(t *testing.T) {
+	t.Parallel()
 	buf := newStderrTailBuffer(16)
 	_, _ = buf.Write([]byte("hello"))
 	if got := buf.String(); got != "hello" {
@@ -338,6 +359,7 @@ func TestStderrTailBuffer_Basic(t *testing.T) {
 }
 
 func TestStderrTailBuffer_Overflow(t *testing.T) {
+	t.Parallel()
 	buf := newStderrTailBuffer(8)
 	_, _ = buf.Write([]byte("abcdefghijklmnop")) // 16 bytes into 8-byte buffer
 	got := buf.String()
@@ -347,6 +369,7 @@ func TestStderrTailBuffer_Overflow(t *testing.T) {
 }
 
 func TestStderrTailBuffer_IncrementalOverflow(t *testing.T) {
+	t.Parallel()
 	buf := newStderrTailBuffer(8)
 	_, _ = buf.Write([]byte("abcd"))
 	_, _ = buf.Write([]byte("efgh"))
@@ -358,23 +381,11 @@ func TestStderrTailBuffer_IncrementalOverflow(t *testing.T) {
 }
 
 func TestProcessTarget_NoShellWrapping(t *testing.T) {
+	t.Parallel()
 	// Regression test: verify that NewProcessTarget launches the binary
 	// directly and does NOT wrap it with "sh -c". The echo_args mode
 	// returns os.Args so we can inspect how the process was invoked.
-	path, args := helperCommand()
-	env := helperEnv("echo_args")
-
-	for _, e := range env {
-		parts := strings.SplitN(e, "=", 2)
-		t.Setenv(parts[0], parts[1])
-	}
-
-	ctx := context.Background()
-	target, err := NewProcessTarget(ctx, path, args...)
-	if err != nil {
-		t.Fatalf("NewProcessTarget failed: %v", err)
-	}
-	defer func() { _ = target.Close() }()
+	target := newTestProcessTarget(t, "echo_args")
 
 	result, err := target.Exec(context.Background(), "echo hello")
 	if err != nil {

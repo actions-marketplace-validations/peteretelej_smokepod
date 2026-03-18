@@ -120,7 +120,6 @@ func (r *CLIRunner) compareOutput(expected []testfile.Expect, actual string) (er
 			len(actualLines), len(expected), diff), wsDiff
 	}
 
-	hasWSDiff := false
 	for i, exp := range expected {
 		actualLine := actualLines[i]
 		if exp.IsRegex {
@@ -135,7 +134,6 @@ func (r *CLIRunner) compareOutput(expected []testfile.Expect, actual string) (er
 		} else {
 			if actualLine != exp.Text {
 				if whitespace.IsWhitespaceDiff(exp.Text, actualLine) {
-					hasWSDiff = true
 					return fmt.Errorf("line %d: mismatch\n  want: %s\n  got:  %s",
 						exp.Line, whitespace.RenderWhitespace(exp.Text), whitespace.RenderWhitespace(actualLine)), true
 				}
@@ -145,7 +143,7 @@ func (r *CLIRunner) compareOutput(expected []testfile.Expect, actual string) (er
 		}
 	}
 
-	return nil, hasWSDiff
+	return nil, false
 }
 
 func expectSuffix(exp testfile.Expect) string {
