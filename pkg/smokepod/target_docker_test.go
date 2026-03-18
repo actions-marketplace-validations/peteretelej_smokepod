@@ -8,6 +8,7 @@ import (
 )
 
 func TestDockerTarget_Exec(t *testing.T) {
+	skipIfShort(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -36,6 +37,7 @@ func TestDockerTarget_Exec(t *testing.T) {
 }
 
 func TestDockerTarget_ExecWithExitCode(t *testing.T) {
+	skipIfShort(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -60,6 +62,7 @@ func TestDockerTarget_ExecWithExitCode(t *testing.T) {
 }
 
 func TestDockerTarget_ExecWithStderr(t *testing.T) {
+	skipIfShort(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -84,6 +87,7 @@ func TestDockerTarget_ExecWithStderr(t *testing.T) {
 }
 
 func TestDockerTarget_Close(t *testing.T) {
+	skipIfShort(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 

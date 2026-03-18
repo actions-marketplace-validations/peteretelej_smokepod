@@ -6,8 +6,8 @@ GOLANGCI_LINT_VERSION="v2.8.0"
 
 echo "Running pre-push checks..."
 
-echo "==> Running tests..."
-go test -race ./...
+echo "==> Running tests (short mode, skipping Docker tests)..."
+go test -short -race ./...
 
 echo "==> Running vet..."
 go vet ./...
