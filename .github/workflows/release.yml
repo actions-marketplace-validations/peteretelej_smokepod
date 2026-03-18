@@ -27,3 +27,26 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Set npm package version from tag
+        working-directory: npm
+        shell: bash
+        run: npm pkg set version="${GITHUB_REF_NAME#v}"
+
+      - name: Publish npm package
+        working-directory: npm
+        run: npm publish --provenance

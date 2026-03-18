@@ -106,6 +106,25 @@ smokepod/
 5. Push (pre-push hook will verify)
 6. Open a pull request
 
+## npm Wrapper Release Notes
+
+The npm wrapper publishes only after the Go release job succeeds and uploads the matching binaries plus `checksums.txt`. Keep npm and Go versions aligned: a `vX.Y.Z` tag must publish `smokepod@X.Y.Z`, and the npm installer will fetch that exact GitHub release.
+
+### Trusted Publishing Setup
+
+- Configure npm trusted publishing for this repository and `.github/workflows/release.yml` before the first public npm release.
+- Keep `publish-npm` on a GitHub-hosted runner because npm trusted publishing and OIDC provenance do not work from self-hosted runners.
+- The release workflow rewrites `npm/package.json` from `GITHUB_REF_NAME` with `npm pkg set version="${GITHUB_REF_NAME#v}"`, so do not hand-edit the checked-in wrapper version before publishing.
+
+### First Release Checklist
+
+1. Confirm the `smokepod` package name is still available on npm.
+2. Confirm the matching GitHub release contains all six binaries and `checksums.txt` before npm publish runs.
+3. Run `cd npm && npm pack` and inspect the tarball contents before the first public publish.
+4. Verify install-and-run behavior in a clean sample project with `SMOKEPOD_BINARY` pointing at a locally built binary.
+5. Confirm `action.yml` and the Go runtime behavior remain unchanged so the GitHub Action release path is unaffected.
+6. Confirm npm trusted publishing is configured for `.github/workflows/release.yml` before tagging the first release.
+
 ## Code Style
 
 - Follow standard Go conventions
