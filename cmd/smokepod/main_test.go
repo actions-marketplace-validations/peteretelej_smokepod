@@ -309,6 +309,21 @@ func TestResolveTarget(t *testing.T) {
 			wantTargetArgs: nil,
 			wantMode:       "process",
 		},
+		{
+			name:           "wrap mode from file",
+			metadata:       map[string][]string{"target": {"/bin/sh"}, "mode": {"wrap"}},
+			wantTarget:     "/bin/sh",
+			wantTargetArgs: nil,
+			wantMode:       "wrap",
+		},
+		{
+			name:           "wrap mode from CLI",
+			metadata:       map[string][]string{"target": {"/bin/sh"}},
+			cliMode:        "wrap",
+			wantTarget:     "/bin/sh",
+			wantTargetArgs: nil,
+			wantMode:       "wrap",
+		},
 	}
 
 	for _, tt := range tests {

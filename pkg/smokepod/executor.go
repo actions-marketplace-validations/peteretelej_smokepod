@@ -304,7 +304,7 @@ func (e *Executor) createTarget(ctx context.Context, test TestDefinition) (Targe
 		if test.Mode == "process" {
 			return NewProcessTarget(ctx, test.Target, test.TargetArgs...)
 		}
-		return NewLocalTarget(test.Target, test.TargetArgs, nil), nil
+		return NewLocalTarget(test.Target, test.TargetArgs, nil, test.Mode), nil
 	}
 
 	return nil, fmt.Errorf("test must specify image or target")

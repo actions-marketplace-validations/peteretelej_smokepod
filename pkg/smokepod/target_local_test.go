@@ -7,7 +7,7 @@ import (
 )
 
 func TestLocalTarget_Exec(t *testing.T) {
-	target := NewLocalTarget("", nil, nil)
+	target := NewLocalTarget("", nil, nil, "")
 
 	result, err := target.Exec(context.Background(), "echo hello")
 	if err != nil {
@@ -24,7 +24,7 @@ func TestLocalTarget_Exec(t *testing.T) {
 }
 
 func TestLocalTarget_ExecWithExitCode(t *testing.T) {
-	target := NewLocalTarget("", nil, nil)
+	target := NewLocalTarget("", nil, nil, "")
 
 	result, err := target.Exec(context.Background(), "exit 42")
 	if err != nil {
@@ -37,7 +37,7 @@ func TestLocalTarget_ExecWithExitCode(t *testing.T) {
 }
 
 func TestLocalTarget_ExecWithStderr(t *testing.T) {
-	target := NewLocalTarget("", nil, nil)
+	target := NewLocalTarget("", nil, nil, "")
 
 	result, err := target.Exec(context.Background(), "echo error >&2")
 	if err != nil {
@@ -50,7 +50,7 @@ func TestLocalTarget_ExecWithStderr(t *testing.T) {
 }
 
 func TestLocalTarget_ExecWithEnv(t *testing.T) {
-	target := NewLocalTarget("", nil, []string{"MY_VAR=testvalue"})
+	target := NewLocalTarget("", nil, []string{"MY_VAR=testvalue"}, "")
 
 	result, err := target.Exec(context.Background(), "echo $MY_VAR")
 	if err != nil {
@@ -63,7 +63,7 @@ func TestLocalTarget_ExecWithEnv(t *testing.T) {
 }
 
 func TestLocalTarget_Close(t *testing.T) {
-	target := NewLocalTarget("", nil, nil)
+	target := NewLocalTarget("", nil, nil, "")
 
 	if err := target.Close(); err != nil {
 		t.Errorf("Close returned error: %v", err)
@@ -71,7 +71,7 @@ func TestLocalTarget_Close(t *testing.T) {
 }
 
 func TestLocalTarget_CustomShell(t *testing.T) {
-	target := NewLocalTarget("/bin/bash", nil, nil)
+	target := NewLocalTarget("/bin/bash", nil, nil, "")
 
 	result, err := target.Exec(context.Background(), "echo $0")
 	if err != nil {
@@ -85,7 +85,7 @@ func TestLocalTarget_CustomShell(t *testing.T) {
 
 func TestLocalTarget_ExecWithFixedArgs(t *testing.T) {
 	// Use bash with --norc to verify fixed args are passed before -c
-	target := NewLocalTarget("/bin/bash", []string{"--norc"}, nil)
+	target := NewLocalTarget("/bin/bash", []string{"--norc"}, nil, "")
 
 	result, err := target.Exec(context.Background(), "echo hello")
 	if err != nil {
@@ -101,7 +101,7 @@ func TestLocalTarget_ExecWithFixedArgs(t *testing.T) {
 }
 
 func TestLocalTarget_ExecWithMultipleFixedArgs(t *testing.T) {
-	target := NewLocalTarget("/bin/bash", []string{"--norc", "--noprofile"}, nil)
+	target := NewLocalTarget("/bin/bash", []string{"--norc", "--noprofile"}, nil, "")
 
 	result, err := target.Exec(context.Background(), "echo works")
 	if err != nil {
@@ -114,7 +114,7 @@ func TestLocalTarget_ExecWithMultipleFixedArgs(t *testing.T) {
 }
 
 func TestLocalTarget_GetVersion_NoArgs(t *testing.T) {
-	target := NewLocalTarget("/bin/bash", nil, nil)
+	target := NewLocalTarget("/bin/bash", nil, nil, "")
 
 	version := target.GetVersion(context.Background())
 	if version == "" {
@@ -124,7 +124,7 @@ func TestLocalTarget_GetVersion_NoArgs(t *testing.T) {
 
 func TestLocalTarget_GetVersion_WithArgs(t *testing.T) {
 	// With fixed args, GetVersion should run: path, args..., "--version"
-	target := NewLocalTarget("/bin/bash", []string{"--norc"}, nil)
+	target := NewLocalTarget("/bin/bash", []string{"--norc"}, nil, "")
 
 	version := target.GetVersion(context.Background())
 	// bash --norc --version should still return version info
@@ -133,5 +133,53 @@ func TestLocalTarget_GetVersion_WithArgs(t *testing.T) {
 	}
 	if !strings.Contains(version, "bash") {
 		t.Errorf("GetVersion = %q, expected it to contain 'bash'", version)
+	}
+}
+
+func TestIsShellTarget(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/bin/bash", true},
+		{"/usr/bin/zsh", true},
+		{"bash", true},
+		{"/usr/bin/jq", false},
+		{"jq", false},
+		{"python3", false},
+		{"/bin/sh", true},
+		{"fish", true},
+		{"dash", true},
+		{"ksh", true},
+	}
+	for _, tt := range tests {
+		got := IsShellTarget(tt.path)
+		if got != tt.want {
+			t.Errorf("IsShellTarget(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestLocalTarget_NonShellExec(t *testing.T) {
+	// Non-shell target with mode "shell" should wrap in /bin/sh
+	target := NewLocalTarget("/usr/bin/jq", nil, nil, "shell")
+	result, err := target.Exec(context.Background(), "echo hello")
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if result.Stdout != "hello\n" {
+		t.Errorf("Stdout = %q, want %q", result.Stdout, "hello\n")
+	}
+}
+
+func TestLocalTarget_WrapMode(t *testing.T) {
+	// Wrap mode should use /bin/sh even for shell targets
+	target := NewLocalTarget("/bin/bash", nil, nil, "wrap")
+	result, err := target.Exec(context.Background(), "echo hello")
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if result.Stdout != "hello\n" {
+		t.Errorf("Stdout = %q, want %q", result.Stdout, "hello\n")
 	}
 }

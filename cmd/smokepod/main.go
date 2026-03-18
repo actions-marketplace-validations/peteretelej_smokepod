@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -118,7 +119,7 @@ func recordCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:  "mode",
-				Usage: "Target mode: shell (default) or process",
+				Usage: "Target mode: shell (default), process, or wrap",
 				Value: "",
 			},
 			&cli.StringFlag{
@@ -159,7 +160,7 @@ func verifyCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:  "mode",
-				Usage: "Target mode: shell (default) or process",
+				Usage: "Target mode: shell (default), process, or wrap",
 				Value: "",
 			},
 			&cli.BoolFlag{
@@ -369,6 +370,11 @@ func recordAction(c *cli.Context) error {
 			continue
 		}
 
+		if _, err := exec.LookPath(resolvedTarget); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: target %q not found in PATH\n", testFile, resolvedTarget)
+			continue
+		}
+
 		var targetExec smokepod.Target
 		if resolvedMode == "process" {
 			procTarget, err := smokepod.NewProcessTarget(ctx, resolvedTarget, resolvedArgs...)
@@ -378,7 +384,7 @@ func recordAction(c *cli.Context) error {
 			}
 			targetExec = procTarget
 		} else {
-			targetExec = smokepod.NewLocalTarget(resolvedTarget, resolvedArgs, nil)
+			targetExec = smokepod.NewLocalTarget(resolvedTarget, resolvedArgs, nil, resolvedMode)
 		}
 
 		platform := smokepod.DetectPlatform(ctx, targetExec)
@@ -532,6 +538,16 @@ func runVerify(c *cli.Context, ctx context.Context, cliTarget string, cliTargetA
 			continue
 		}
 
+		if _, err := exec.LookPath(resolvedTarget); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: target %q not found in PATH\n", testFile, resolvedTarget)
+			sectionsFailed++
+			sectionsTotal++
+			if failFast {
+				break
+			}
+			continue
+		}
+
 		var targetExec smokepod.Target
 		if resolvedMode == "process" {
 			procTarget, err := smokepod.NewProcessTarget(ctx, resolvedTarget, resolvedArgs...)
@@ -546,7 +562,7 @@ func runVerify(c *cli.Context, ctx context.Context, cliTarget string, cliTargetA
 			}
 			targetExec = procTarget
 		} else {
-			targetExec = smokepod.NewLocalTarget(resolvedTarget, resolvedArgs, nil)
+			targetExec = smokepod.NewLocalTarget(resolvedTarget, resolvedArgs, nil, resolvedMode)
 		}
 
 		// Get sections to verify from .test file
@@ -820,8 +836,8 @@ func resolveTarget(filename string, metadata map[string][]string, cliTarget stri
 	if mode == "" {
 		mode = "shell"
 	}
-	if mode != "shell" && mode != "process" {
-		return "", nil, "", fmt.Errorf("invalid mode %q, must be shell or process", mode)
+	if mode != "shell" && mode != "process" && mode != "wrap" {
+		return "", nil, "", fmt.Errorf("invalid mode %q, must be shell, process, or wrap", mode)
 	}
 
 	return target, targetArgs, mode, nil
