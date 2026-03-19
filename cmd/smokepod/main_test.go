@@ -539,3 +539,59 @@ func TestCLI_AllowEmptyFlag(t *testing.T) {
 		})
 	}
 }
+
+func TestCLI_RecordIndentFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a minimal test file so discovery succeeds
+	testContent := "## s\n$ echo hi\nhi\n"
+	testPath := filepath.Join(tmpDir, "tests", "t.test")
+	if err := os.MkdirAll(filepath.Dir(testPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(testPath, []byte(testContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name      string
+		indent    string
+		wantErr   bool
+		errSubstr string
+	}{
+		{"two_spaces", "2", false, ""},
+		{"four_spaces", "4", false, ""},
+		{"tab", "tab", false, ""},
+		{"invalid", "3", true, "invalid --indent"},
+		{"default", "", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := quietTestApp()
+			fixturesDir := filepath.Join(tmpDir, "fixtures-"+tt.name)
+
+			args := []string{
+				"smokepod", "record",
+				"--tests", filepath.Join(tmpDir, "tests"),
+				"--fixtures", fixturesDir,
+				"--target", "echo",
+			}
+			if tt.indent != "" {
+				args = append(args, "--indent", tt.indent)
+			}
+
+			err := app.Run(args)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.errSubstr) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.errSubstr)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

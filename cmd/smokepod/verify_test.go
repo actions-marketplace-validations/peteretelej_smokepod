@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,19 +27,12 @@ func writeTestFile(t *testing.T, dir, name, content string) string {
 func writeFixture(t *testing.T, dir, name string, sections map[string][]smokepod.FixtureCommand) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatal(err)
-	}
 	fixture := &smokepod.FixtureFile{
 		Source:       "test",
 		RecordedWith: "echo",
 		Sections:     sections,
 	}
-	data, err := json.MarshalIndent(fixture, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if _, err := smokepod.WriteFixture(path, fixture, "  "); err != nil {
 		t.Fatal(err)
 	}
 	return path

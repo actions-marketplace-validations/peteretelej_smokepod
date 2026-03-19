@@ -130,6 +130,11 @@ func recordCommand() *cli.Command {
 				Name:  "allow-empty",
 				Usage: "Allow empty test discovery (no .test files found)",
 			},
+			&cli.StringFlag{
+				Name:  "indent",
+				Usage: `JSON indent: "2" (default), "4", or "tab"`,
+				Value: "2",
+			},
 		},
 		Action: recordAction,
 	}
@@ -303,6 +308,18 @@ func recordAction(c *cli.Context) error {
 	runFlag := c.String("run")
 	allowEmpty := c.Bool("allow-empty")
 
+	var indent string
+	switch v := c.String("indent"); v {
+	case "2":
+		indent = "  "
+	case "4":
+		indent = "    "
+	case "tab":
+		indent = "\t"
+	default:
+		return fmt.Errorf("invalid --indent value %q: use 2, 4, or tab", v)
+	}
+
 	if os.Getenv("CI") != "" && !update {
 		fmt.Fprintln(os.Stderr, "Warning: CI environment detected; use --update to overwrite fixtures")
 		return cli.Exit(fmt.Sprintf("Error: %v", smokepod.ErrCIGuard), exitRuntimeError)
@@ -345,6 +362,7 @@ func recordAction(c *cli.Context) error {
 	}()
 
 	recorded := 0
+	unchanged := 0
 	skipped := 0
 	failed := 0
 
@@ -436,17 +454,23 @@ func recordAction(c *cli.Context) error {
 
 		_ = targetExec.Close()
 
-		if _, err := smokepod.WriteFixture(fixturePath, fixture, "  "); err != nil {
+		written, err := smokepod.WriteFixture(fixturePath, fixture, indent)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing fixture %s: %v\n", fixturePath, err)
 			failed++
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "Recorded %s -> %s\n", testFile, fixturePath)
-		recorded++
+		if written {
+			fmt.Fprintf(os.Stderr, "Recorded %s -> %s\n", testFile, fixturePath)
+			recorded++
+		} else {
+			fmt.Fprintf(os.Stderr, "Unchanged %s\n", testFile)
+			unchanged++
+		}
 	}
 
-	fmt.Fprintf(os.Stderr, "\nSummary: %d recorded, %d skipped, %d failed\n", recorded, skipped, failed)
+	fmt.Fprintf(os.Stderr, "\nSummary: %d recorded, %d unchanged, %d skipped, %d failed\n", recorded, unchanged, skipped, failed)
 	if failed > 0 && recorded == 0 {
 		return cli.Exit("all test files failed to record", exitTestFailure)
 	}
