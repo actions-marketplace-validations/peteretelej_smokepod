@@ -317,7 +317,7 @@ func recordAction(c *cli.Context) error {
 	case "tab":
 		indent = "\t"
 	default:
-		return fmt.Errorf("invalid --indent value %q: use 2, 4, or tab", v)
+		return cli.Exit(fmt.Sprintf("invalid --indent value %q: use 2, 4, or tab", v), exitConfigError)
 	}
 
 	if os.Getenv("CI") != "" && !update {
